@@ -13,12 +13,33 @@ from flask_jwt_extended import (
 from sqlalchemy import or_ as db_or
 
 from config import settings
-from models import db, User, PasswordResetToken
+from models import (
+    db,
+    User,
+    Organization,
+    PasswordResetToken,
+    RevokedToken,
+    Task,
+    TaskComment,
+    TaskActivity,
+    TaskAttachment,
+    Notification,
+    Category,
+    CalendarEvent,
+)
 
 auth = Blueprint('auth', __name__, url_prefix='/api/auth')
 users = Blueprint('users', __name__, url_prefix='/api')
 
-token_blacklist = set()
+
+def revoke_jti(jti: str) -> None:
+    if not RevokedToken.query.filter_by(jti=jti).first():
+        db.session.add(RevokedToken(jti=jti))
+        db.session.commit()
+
+
+def is_jti_revoked(jti: str) -> bool:
+    return RevokedToken.query.filter_by(jti=jti).first() is not None
 
 
 def role_from_email(email: str) -> str:
@@ -56,12 +77,23 @@ def register():
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'error': 'Email already exists'}), 400
 
+    password = data['password']
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
     user = User(
         username=data['username'],
         email=data['email'],
         role=role_from_email(data['email']),
     )
-    user.set_password(data['password'])
+    user.set_password(password)
+
+    # Każdy samodzielnie zarejestrowany użytkownik dostaje własną organizację.
+    # Bez tego organization_id == NULL zlewa wszystkich w jeden tenant (wyciek danych).
+    org = Organization(name=f"{user.username} (organizacja)")
+    db.session.add(org)
+    db.session.flush()
+    user.organization_id = org.id
 
     db.session.add(user)
     db.session.commit()
@@ -101,7 +133,7 @@ def refresh():
     current_user_id_str = get_jwt_identity()
 
     jti = get_jwt()['jti']
-    if jti in token_blacklist:
+    if is_jti_revoked(jti):
         return jsonify({'error': 'Token has been revoked'}), 401
 
     user = User.query.get(int(current_user_id_str))
@@ -114,8 +146,7 @@ def refresh():
 @auth.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    jti = get_jwt()['jti']
-    token_blacklist.add(jti)
+    revoke_jti(get_jwt()['jti'])
 
     return jsonify({'message': 'Successfully logged out'}), 200
 
@@ -123,8 +154,7 @@ def logout():
 @auth.route('/logout/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def logout_refresh():
-    jti = get_jwt()['jti']
-    token_blacklist.add(jti)
+    revoke_jti(get_jwt()['jti'])
 
     return jsonify({'message': 'Successfully logged out'}), 200
 
@@ -271,7 +301,8 @@ def update_user(user_id):
         if User.query.filter_by(email=data['email']).filter(User.id != user_id).first():
             return jsonify({'error': 'Email already exists'}), 400
         user.email = data['email']
-        user.role = role_from_email(data['email'])
+        # Rola NIE jest przeliczana z e-maila przy edycji profilu — w przeciwnym
+        # razie użytkownik mógłby sam podnieść sobie uprawnienia, zmieniając domenę.
 
     if 'first_name' in data:
         user.first_name = data['first_name'] or None
@@ -293,6 +324,47 @@ def delete_user(user_id):
         return jsonify({'error': 'You can only delete your own account'}), 403
 
     user = User.query.get_or_404(user_id)
+    _purge_user_references(user)
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'User deleted successfully'}), 200
+
+
+def _purge_user_references(user: User) -> None:
+    """Usuwa/odłącza wszystko, co odwołuje się do usera, zanim go skasujemy.
+
+    Zadania, których jest właścicielem, kasują się kaskadą (User.tasks), a wraz
+    z nimi ich komentarze/aktywności/załączniki/powiadomienia (kaskady na Task).
+    Tu sprzątamy referencje spoza tej kaskady, które inaczej rzuciłyby błąd FK.
+    """
+    uid = user.id
+
+    # Wydarzenia kalendarza wskazujące zadania usera — odłącz (FK bez kaskady).
+    owned_task_ids = [t.id for t in Task.query.filter_by(user_id=uid).all()]
+    if owned_task_ids:
+        CalendarEvent.query.filter(CalendarEvent.task_id.in_(owned_task_ids)).update(
+            {'task_id': None}, synchronize_session=False
+        )
+
+    # Referencje na cudzych zadaniach.
+    Task.query.filter_by(assignee_user_id=uid).update(
+        {'assignee_user_id': None}, synchronize_session=False
+    )
+    TaskComment.query.filter_by(user_id=uid).delete(synchronize_session=False)
+    TaskActivity.query.filter_by(user_id=uid).update(
+        {'user_id': None}, synchronize_session=False
+    )
+    TaskAttachment.query.filter_by(user_id=uid).delete(synchronize_session=False)
+    Notification.query.filter_by(user_id=uid).delete(synchronize_session=False)
+    PasswordResetToken.query.filter_by(user_id=uid).delete(synchronize_session=False)
+
+    # Kategorie usera (kasujemy pojedynczo, by SQLAlchemy posprzątał task_categories).
+    for cat in Category.query.filter_by(user_id=uid).all():
+        db.session.delete(cat)
+
+    # Członkostwa M2M (group_members / project_members / calendar_event_attendees).
+    user.groups.clear()
+    user.projects.clear()
+    user.calendar_events.clear()
+
+    db.session.flush()

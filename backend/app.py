@@ -20,7 +20,7 @@ from flask_jwt_extended import JWTManager, get_jwt
 from config import Config, settings
 from models import db
 from routes import api
-from auth import auth, users, token_blacklist
+from auth import auth, users, is_jti_revoked
 from schema_migrate import ensure_schema
 
 
@@ -39,8 +39,7 @@ def create_app():
     
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
-        jti = jwt_payload['jti']
-        return jti in token_blacklist
+        return is_jti_revoked(jwt_payload['jti'])
     
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):

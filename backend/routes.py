@@ -115,6 +115,30 @@ def _parse_dt(value):
         return None
 
 
+def _parse_import_dt(value):
+    """Daty z importu -> datetime (kolumny Task to DateTime). None gdy nieparsowalne.
+
+    Obsługuje 'YYYY-MM-DD' (północ), ISO 8601 z 'T'/'Z' oraz już-datetime/date.
+    """
+    if value is None or value == '':
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    if isinstance(value, str):
+        try:
+            if 'T' in value:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                return dt
+            return datetime.combine(date.fromisoformat(value), datetime.min.time())
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def _default_todo_status():
     return TaskStatus.query.filter_by(code='todo').first()
 
@@ -135,6 +159,44 @@ def _notify(user_id, message, kind='task', task_id=None):
     db.session.add(
         Notification(user_id=user_id, message=message, kind=kind, task_id=task_id)
     )
+
+
+def _bulk_soonest_action(tasks):
+    """Liczy 'soonest_action' dla listy zadań w 2 zapytaniach zamiast N rekurencji.
+
+    soonest_action(t) = najwcześniejszy planned_date wśród t i wszystkich zadań
+    osiągalnych przez relacje wychodzące (podzadania). Zwraca {task_id: iso|None}.
+    """
+    planned = {
+        tid: pd
+        for tid, pd in db.session.query(Task.id, Task.planned_date).all()
+    }
+    adj = {}
+    for src, tgt in db.session.query(
+        TaskRelation.source_task_id, TaskRelation.target_task_id
+    ).all():
+        adj.setdefault(src, []).append(tgt)
+
+    memo = {}
+
+    def _soonest(tid):
+        if tid in memo:
+            return memo[tid]
+        memo[tid] = None  # znacznik "w trakcie" — przerywa cykle
+        pd = planned.get(tid)
+        best = pd.date() if hasattr(pd, 'date') else pd
+        for nxt in adj.get(tid, ()):  # noqa: E1133
+            s = _soonest(nxt)
+            if s is not None and (best is None or s < best):
+                best = s
+        memo[tid] = best
+        return best
+
+    out = {}
+    for t in tasks:
+        d = _soonest(t.id)
+        out[t.id] = d.isoformat() if d is not None else None
+    return out
 
 # ========== TASKS ENDPOINTS ==========
 
@@ -157,9 +219,7 @@ def get_tasks():
         date_to = request.args.get('date_to', type=str)  # YYYY-MM-DD
 
         query = Task.query.filter(visible_tasks_condition(me))
-        visible_id_list = [t.id for t in query.all()]
-        query = Task.query.filter(visible_tasks_condition(me))
-        
+
         # Filtruj po kategoriach jeśli podano
         category_filter_applied = False
         if categories_param or (no_categories and no_categories.lower() == 'true'):
@@ -198,14 +258,15 @@ def get_tasks():
                                 # Znajdź taski bez kategorii
                                 all_task_ids_with_cats = db.session.query(task_categories.c.task_id).distinct().all()
                                 all_task_ids_with_cats_list = [row[0] for row in all_task_ids_with_cats]
-                                task_ids_without_cats = []
+                                # Lista widocznych id liczona tylko tu, gdzie jest potrzebna.
+                                all_user_task_ids = [
+                                    t.id for t in Task.query
+                                    .filter(visible_tasks_condition(me)).all()
+                                ]
                                 if all_task_ids_with_cats_list:
-                                    # Pobierz wszystkie taski użytkownika i odfiltruj te z kategoriami
-                                    all_user_task_ids = list(visible_id_list)
                                     task_ids_without_cats = [tid for tid in all_user_task_ids if tid not in all_task_ids_with_cats_list]
                                 else:
                                     # Jeśli nie ma żadnych tasków z kategoriami, wszystkie są bez kategorii
-                                    all_user_task_ids = list(visible_id_list)
                                     task_ids_without_cats = all_user_task_ids
                                 
                                 # Połącz listy (OR logic)
@@ -302,11 +363,15 @@ def get_tasks():
 
         tasks = query.all()
         include_relations = request.args.get('include_relations', 'false').lower() == 'true'
-        
+        soonest_map = _bulk_soonest_action(tasks)
+
         tasks_dict = []
         for task in tasks:
             try:
-                tasks_dict.append(task.to_dict(include_relations=include_relations))
+                tasks_dict.append(task.to_dict(
+                    include_relations=include_relations,
+                    soonest_action=soonest_map.get(task.id),
+                ))
             except Exception as task_error:
                 # Loguj błąd dla konkretnego zadania, ale kontynuuj z innymi
                 import traceback
@@ -582,6 +647,9 @@ def delete_task(task_id):
     if not can_delete_task(task, me):
         return jsonify({'error': 'Only the task owner can delete this task'}), 403
 
+    CalendarEvent.query.filter_by(task_id=task.id).update(
+        {'task_id': None}, synchronize_session=False
+    )
     db.session.delete(task)
     db.session.commit()
     return jsonify({'message': 'Task deleted successfully'}), 200
@@ -615,27 +683,26 @@ def get_task_relations(task_id):
 @api.route('/tasks/<int:task_id>/relations', methods=['POST'])
 @jwt_required()
 def create_task_relation(task_id):
-    """Utwórz relację między zadaniami (właściciel obu zadań)"""
-    current_user_id = int(get_jwt_identity())
+    """Utwórz relację między zadaniami (wymaga prawa edycji obu zadań)."""
+    me = User.query.get_or_404(int(get_jwt_identity()))
 
-    source_task = Task.query.filter_by(id=task_id, user_id=current_user_id).first()
-    if not source_task:
-        return jsonify({'error': 'Source task not found or you are not the owner'}), 404
-
-    data = request.get_json()
-
-    if not data or not data.get('target_task_id'):
+    data = request.get_json() or {}
+    if not data.get('target_task_id'):
         return jsonify({'error': 'target_task_id is required'}), 400
-
     target_task_id = data['target_task_id']
 
-    target_task = Task.query.filter_by(id=target_task_id, user_id=current_user_id).first()
-    if not target_task:
-        return jsonify({'error': 'Target task not found or does not belong to you'}), 404
-    
     # Zapobiegaj relacji zadania z samym sobą
     if task_id == target_task_id:
         return jsonify({'error': 'Task cannot be related to itself'}), 400
+
+    source_task = Task.query.get(task_id)
+    target_task = Task.query.get(target_task_id)
+    if not source_task or not task_visible(source_task, me):
+        return jsonify({'error': 'Source task not found'}), 404
+    if not target_task or not task_visible(target_task, me):
+        return jsonify({'error': 'Target task not found'}), 404
+    if not can_edit_task(source_task, me) or not can_edit_task(target_task, me):
+        return jsonify({'error': 'You need edit rights on both tasks'}), 403
     
     # Sprawdź czy relacja już istnieje (w obu kierunkach)
     existing = TaskRelation.query.filter(
@@ -680,7 +747,7 @@ def get_task_relation(relation_id):
 @jwt_required()
 def update_task_relation(relation_id):
     """Aktualizuj relację (wymaga autoryzacji) - obecnie nie ma pól do aktualizacji"""
-    current_user_id = int(get_jwt_identity())
+    me = User.query.get_or_404(int(get_jwt_identity()))
 
     relation = TaskRelation.query.get_or_404(relation_id)
 
@@ -690,9 +757,9 @@ def update_task_relation(relation_id):
     if not source_task or not target_task:
         return jsonify({'error': 'Related tasks not found'}), 404
 
-    if source_task.user_id != current_user_id or target_task.user_id != current_user_id:
+    if not can_edit_task(source_task, me) or not can_edit_task(target_task, me):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     # Obecnie relacja nie ma pól do aktualizacji (tylko source_task_id i target_task_id)
     # Jeśli potrzebujesz zmienić relację, usuń starą i utwórz nową
     return jsonify(relation.to_dict(include_tasks=True)), 200
@@ -700,22 +767,20 @@ def update_task_relation(relation_id):
 @api.route('/relations/<int:relation_id>', methods=['DELETE'])
 @jwt_required()
 def delete_task_relation(relation_id):
-    """Usuń relację (wymaga autoryzacji)"""
-    current_user_id_str = get_jwt_identity()
-    current_user_id = int(current_user_id_str)
-    
+    """Usuń relację (wymaga prawa edycji obu zadań)."""
+    me = User.query.get_or_404(int(get_jwt_identity()))
+
     relation = TaskRelation.query.get_or_404(relation_id)
-    
-    # Sprawdź czy użytkownik jest właścicielem któregoś z zadań
+
     source_task = Task.query.get(relation.source_task_id)
     target_task = Task.query.get(relation.target_task_id)
-    
+
     if not source_task or not target_task:
         return jsonify({'error': 'Related tasks not found'}), 404
-    
-    if source_task.user_id != current_user_id or target_task.user_id != current_user_id:
+
+    if not can_edit_task(source_task, me) or not can_edit_task(target_task, me):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     db.session.delete(relation)
     db.session.commit()
     return jsonify({'message': 'Relation deleted successfully'}), 200
@@ -865,34 +930,20 @@ def import_tasks():
                     version=1,
                 )
                 
-                # Ustaw daty jeśli są podane
+                # Daty: kolumny to DateTime, więc zawsze zapisujemy datetime (nie date).
                 if task_data.get('deadline'):
-                    try:
-                        deadline_str = task_data.get('deadline')
-                        # Obsługa różnych formatów daty
-                        if isinstance(deadline_str, str):
-                            # Spróbuj parsować różne formaty
-                            if 'T' in deadline_str:
-                                new_task.deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-                            else:
-                                new_task.deadline = datetime.strptime(deadline_str, '%Y-%m-%d').date()
-                        else:
-                            new_task.deadline = deadline_str
-                    except (ValueError, TypeError) as e:
-                        errors.append(f'Invalid deadline format for task "{task_data.get("topic")}": {e}')
-                
+                    dt = _parse_import_dt(task_data.get('deadline'))
+                    if dt is None:
+                        errors.append(f'Invalid deadline format for task "{task_data.get("topic")}"')
+                    else:
+                        new_task.deadline = dt
+
                 if task_data.get('planned_date'):
-                    try:
-                        planned_str = task_data.get('planned_date')
-                        if isinstance(planned_str, str):
-                            if 'T' in planned_str:
-                                new_task.planned_date = datetime.fromisoformat(planned_str.replace('Z', '+00:00')).date()
-                            else:
-                                new_task.planned_date = datetime.strptime(planned_str, '%Y-%m-%d').date()
-                        else:
-                            new_task.planned_date = planned_str
-                    except (ValueError, TypeError) as e:
-                        errors.append(f'Invalid planned_date format for task "{task_data.get("topic")}": {e}')
+                    dt = _parse_import_dt(task_data.get('planned_date'))
+                    if dt is None:
+                        errors.append(f'Invalid planned_date format for task "{task_data.get("topic")}"')
+                    else:
+                        new_task.planned_date = dt
                 
                 db.session.add(new_task)
                 imported_count += 1
@@ -1034,7 +1085,7 @@ def list_task_comments(task_id):
 def create_task_comment(task_id):
     me = User.query.get_or_404(int(get_jwt_identity()))
     task = Task.query.get(task_id)
-    if not task or not can_edit_task(task, me):
+    if not task or not task_visible(task, me):
         return jsonify({'error': 'Task not found'}), 404
     data = request.get_json() or {}
     body = (data.get('body') or '').strip()
@@ -1042,12 +1093,13 @@ def create_task_comment(task_id):
         return jsonify({'error': 'body is required'}), 400
     c = TaskComment(task_id=task_id, user_id=me.id, body=body)
     db.session.add(c)
+    db.session.flush()  # potrzebne, by zapisać realne c.id w audycie
     db.session.add(
         TaskActivity(
             task_id=task_id,
             user_id=me.id,
             action='comment',
-            detail_json=json.dumps({'comment_id': None}),
+            detail_json=json.dumps({'comment_id': c.id}),
         )
     )
     for uid in {task.user_id, task.assignee_user_id}:

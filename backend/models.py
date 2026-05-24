@@ -5,6 +5,9 @@ import json
 
 db = SQLAlchemy()
 
+# Sentinel: pozwala odróżnić "nie podano" od jawnego None w to_dict.
+_UNSET = object()
+
 group_members = db.Table(
     'group_members',
     db.Column('group_id', db.Integer, db.ForeignKey('groups.id'), primary_key=True),
@@ -167,6 +170,10 @@ class Task(db.Model):
         cascade='all, delete-orphan',
     )
     categories = db.relationship('Category', secondary=task_categories, backref='tasks', lazy=True)
+    comments = db.relationship('TaskComment', backref='task', lazy=True, cascade='all, delete-orphan')
+    activities = db.relationship('TaskActivity', backref='task', lazy=True, cascade='all, delete-orphan')
+    attachments = db.relationship('TaskAttachment', backref='task', lazy=True, cascade='all, delete-orphan')
+    notifications = db.relationship('Notification', backref='task', lazy=True, cascade='all, delete-orphan')
 
     def _get_all_subtask_planned_dates(self, visited=None):
         if visited is None:
@@ -204,7 +211,7 @@ class Task(db.Model):
             pass
         return dates
 
-    def to_dict(self, include_relations=False):
+    def to_dict(self, include_relations=False, soonest_action=_UNSET):
         deadline_str = None
         if self.deadline:
             try:
@@ -225,15 +232,20 @@ class Task(db.Model):
             except (AttributeError, ValueError):
                 planned_date_str = None
 
-        soonest_action_str = None
-        try:
-            all_dates = self._get_all_subtask_planned_dates()
-            if all_dates:
-                soonest_action_str = min(all_dates).isoformat()
-            else:
+        # soonest_action: jeśli wywołujący policzył go hurtowo (lista zadań),
+        # użyj wartości — inaczej rekurencyjny spacer po podzadaniach (pojedynczy GET).
+        if soonest_action is not _UNSET:
+            soonest_action_str = soonest_action
+        else:
+            soonest_action_str = None
+            try:
+                all_dates = self._get_all_subtask_planned_dates()
+                if all_dates:
+                    soonest_action_str = min(all_dates).isoformat()
+                else:
+                    soonest_action_str = planned_date_str
+            except Exception:
                 soonest_action_str = planned_date_str
-        except Exception:
-            soonest_action_str = planned_date_str
 
         st = None
         try:
@@ -584,4 +596,12 @@ class PasswordResetToken(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     token_hash = db.Column(db.String(255), nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class RevokedToken(db.Model):
+    __tablename__ = 'revoked_tokens'
+
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), unique=True, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

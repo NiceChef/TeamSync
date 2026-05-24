@@ -32,7 +32,11 @@ def task_visible(task: Task, user: User) -> bool:
 
 
 def can_edit_task(task: Task, user: User) -> bool:
-    return task_visible(task, user)
+    # Edycja pól zadania: tylko właściciel lub osoba przypisana.
+    # Sama widoczność (np. członkostwo w grupie) NIE daje prawa do edycji.
+    if not task:
+        return False
+    return task.user_id == user.id or task.assignee_user_id == user.id
 
 
 def can_delete_task(task: Task, user: User) -> bool:
