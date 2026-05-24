@@ -51,8 +51,8 @@ import {
     updateTaskDeadline,
     toDateOnly,
 } from './eventUtils';
-import { API_URL, fetchWithAuth } from '../../api/authFetch';
 import { canManage as userCanManage } from '../../constants/roles';
+import { useMe } from '../../context/AuthContext';
 
 const EVENT_TYPES = [
     { value: 'meeting', label: 'Spotkanie' },
@@ -809,7 +809,7 @@ export default function CalendarView({ isAuthenticated }) {
     const [view, setView] = useState('month');
     const [currentDate, setCurrentDate] = useState(() => new Date());
     const [selectedEvent, setSelectedEvent] = useState(null);
-    const [me, setMe] = useState(null);
+    const me = useMe();
     const [formState, setFormState] = useState(null); // null | { initial }
 
     const canManage = userCanManage(me);
@@ -842,18 +842,6 @@ export default function CalendarView({ isAuthenticated }) {
             loadTasks();
         }
     }, [isAuthenticated, loadEvents, loadTasks]);
-
-    useEffect(() => {
-        if (!isAuthenticated) return;
-        (async () => {
-            try {
-                const res = await fetchWithAuth(`${API_URL}/api/auth/me`);
-                if (res.ok) setMe(await res.json());
-            } catch {
-                /* ignore */
-            }
-        })();
-    }, [isAuthenticated]);
 
     const openCreate = useCallback((date) => {
         const base = date ? new Date(date) : new Date();

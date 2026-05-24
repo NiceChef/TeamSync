@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderKanban, Plus, Search, X } from 'lucide-react';
-import { API_URL, fetchWithAuth } from '../../api/authFetch';
 import { listProjects, createProject } from '../../api/projects';
+import { useMe } from '../../context/AuthContext';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { PROJECT_STATUSES, statusMeta, initials } from './projectUtils';
@@ -161,20 +161,8 @@ export default function ProjectsList({ isAuthenticated }) {
     const [statusFilter, setStatusFilter] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [me, setMe] = useState(null);
+    const me = useMe();
     const [dialogOpen, setDialogOpen] = useState(false);
-
-    useEffect(() => {
-        if (!isAuthenticated) return;
-        (async () => {
-            try {
-                const r = await fetchWithAuth(`${API_URL}/api/auth/me`);
-                if (r.ok) setMe(await r.json());
-            } catch {
-                /* ignore */
-            }
-        })();
-    }, [isAuthenticated]);
 
     useEffect(() => {
         if (!isAuthenticated) return;

@@ -18,6 +18,7 @@ import ProjectDetail from './components/projects/ProjectDetail.jsx';
 const Reports = lazy(() => import('./components/reports/Reports.jsx'));
 import { TasksProvider } from './context/TasksContext';
 import { TaskDrawerProvider } from './context/TaskDrawerContext';
+import { AuthProvider } from './context/AuthContext';
 
 function AuthenticatedApp({ user, handleLogout }) {
   const navigate = useNavigate();
@@ -118,11 +119,13 @@ export default function App() {
           />
         )
       ) : (
-        <TasksProvider>
-          <TaskDrawerProvider>
-            <AuthenticatedApp user={user} handleLogout={handleLogout} />
-          </TaskDrawerProvider>
-        </TasksProvider>
+        <AuthProvider isAuthenticated>
+          <TasksProvider>
+            <TaskDrawerProvider>
+              <AuthenticatedApp user={user} handleLogout={handleLogout} />
+            </TaskDrawerProvider>
+          </TasksProvider>
+        </AuthProvider>
       )}
     </BrowserRouter>
   );

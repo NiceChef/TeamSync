@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useTasksContext } from '../context/TasksContext';
 import { API_URL, fetchWithAuth } from '../api/authFetch';
 
 function FilterView({ isAuthenticated }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const tasksContext = useTasksContext();
 
   const [categories, setCategories] = useState([]);

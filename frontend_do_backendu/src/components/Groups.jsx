@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Building2, Plus, Search, ShieldAlert, UserPlus, Users } from 'lucide-react';
 import { isClient, canManage } from '../constants/roles';
+import { useMe } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -14,7 +15,7 @@ export default function Groups({ isAuthenticated }) {
   const [userSearch, setUserSearch] = useState('');
   const [userHits, setUserHits] = useState([]);
   const [error, setError] = useState('');
-  const [me, setMe] = useState(null);
+  const me = useMe();
 
   const token = () => localStorage.getItem('access_token');
 
@@ -32,16 +33,6 @@ export default function Groups({ isAuthenticated }) {
       setError(e.message);
     }
   };
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    (async () => {
-      const r = await fetch(`${API_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (r.ok) setMe(await r.json());
-    })();
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && canManage(me)) loadGroups();

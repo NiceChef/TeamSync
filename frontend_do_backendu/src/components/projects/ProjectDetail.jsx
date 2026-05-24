@@ -11,7 +11,7 @@ import {
     UserMinus,
     Users,
 } from 'lucide-react';
-import { API_URL, fetchWithAuth } from '../../api/authFetch';
+import { useMe } from '../../context/AuthContext';
 import {
     getProject,
     updateProject,
@@ -286,7 +286,7 @@ export default function ProjectDetail({ isAuthenticated }) {
     const { id } = useParams();
     const navigate = useNavigate();
     const [project, setProject] = useState(null);
-    const [me, setMe] = useState(null);
+    const me = useMe();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [editing, setEditing] = useState(false);
@@ -306,14 +306,6 @@ export default function ProjectDetail({ isAuthenticated }) {
 
     useEffect(() => {
         if (!isAuthenticated) return;
-        (async () => {
-            try {
-                const r = await fetchWithAuth(`${API_URL}/api/auth/me`);
-                if (r.ok) setMe(await r.json());
-            } catch {
-                /* ignore */
-            }
-        })();
         load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthenticated, id]);
