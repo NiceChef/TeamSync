@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import TasksToolbar from './TasksToolbar';
 import ActiveTaskFilters from './ActiveTaskFilters';
 import { useTasksContext } from '../../context/TasksContext';
 import { useTaskDrawer } from '../../context/TaskDrawerContext';
+import { useUserSettings } from '../../hooks/useUserSettings';
+import { useTaskListScroll } from '../../hooks/useTaskListScroll';
 import TasksTable from './TasksTable';
 import TasksKanban from './TasksKanban';
 import { buildTaskHierarchy, formatDateOnly } from './taskUtils';
@@ -67,7 +69,6 @@ function TasksGrid({ isAuthenticated }) {
   }, [isAuthenticated, selectedCategoryFilters.length]);
   const [sortBy, setSortBy] = useState('soonest_action'); // 'created_at', 'planned_date', 'deadline', 'soonest_action'
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
-  const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings were loaded
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -76,7 +77,36 @@ function TasksGrid({ isAuthenticated }) {
   const [taskStatuses, setTaskStatuses] = useState([]);
   const [projectsList, setProjectsList] = useState([]);
   const [projectFilter, setProjectFilter] = useState(''); // '' = wszystkie
-  const saveSettingsTimeoutRef = useRef(null);
+
+  const settingsLoaded = useUserSettings({
+    isAuthenticated,
+    settings: {
+      selectedCategoryFilters,
+      statusFilter,
+      noCategories,
+      sortBy,
+      sortOrder,
+      visibleColumns,
+      dateFrom,
+      dateTo,
+    },
+    applySettings: (s) => {
+      if (s.selectedCategoryFilters && tasksContext?.setSelectedCategoryFilters) {
+        tasksContext.setSelectedCategoryFilters(s.selectedCategoryFilters);
+      }
+      if (s.statusFilter && tasksContext?.setStatusFilter) {
+        tasksContext.setStatusFilter(s.statusFilter);
+      }
+      if (s.noCategories !== undefined && tasksContext?.setNoCategories) {
+        tasksContext.setNoCategories(s.noCategories);
+      }
+      if (s.sortBy) setSortBy(s.sortBy);
+      if (s.sortOrder) setSortOrder(s.sortOrder);
+      if (s.visibleColumns && setVisibleColumns) setVisibleColumns(s.visibleColumns);
+      if (s.dateFrom) setDateFrom(s.dateFrom);
+      if (s.dateTo) setDateTo(s.dateTo);
+    },
+  });
 
   // Refs for context functions - initialized with null, will be set in useEffect
   const fetchTasksRef = useRef(null);
@@ -213,18 +243,6 @@ function TasksGrid({ isAuthenticated }) {
     }
   }, [isAuthenticated, selectedCategoryFilters.length, noCategories]);
 
-  // Załaduj ustawienia użytkownika przy starcie (po zalogowaniu)
-  useEffect(() => {
-    if (isAuthenticated) {
-      setSettingsLoaded(false); // Reset flagi przy logowaniu
-      loadUserSettings();
-    } else {
-      // Jeśli nie zalogowany, oznacz ustawienia jako załadowane (używamy domyślnych)
-      setSettingsLoaded(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
-
   // Odśwież taski gdy zmienią się wybrane kategorie lub status (filtrowanie po stronie backendu)
   // Czekaj aż ustawienia się załadują przed pierwszym fetchTasks
   // ✅ ZAWSZE odświeżaj dane z backendu przy każdej zmianie filtrów/widoku
@@ -256,169 +274,7 @@ function TasksGrid({ isAuthenticated }) {
     }
   }, [tasks, sortBy, sortOrder]);
 
-  // ✅ Przewiń do taska po edycji/dodaniu subtaska
-  useEffect(() => {
-    if (location.state?.scrollToTaskId && hierarchicalTasks.length > 0 && !loading) {
-      const taskId = location.state.scrollToTaskId;
-      const taskElement = document.getElementById(`task-${taskId}`);
-
-      if (taskElement) {
-        // Opóźnienie aby upewnić się, że DOM jest gotowy
-        setTimeout(() => {
-          // Uwzględnij wysokość sticky headera
-          const headerHeight = document.querySelector('.app-header')?.offsetHeight || 0;
-          const elementPosition = taskElement.getBoundingClientRect().top + window.pageYOffset;
-          const offsetPosition = elementPosition - headerHeight - 20; // 20px dodatkowego odstępu
-
-          window.scrollTo({
-            top: offsetPosition,
-            behavior: 'smooth'
-          });
-
-          // Podświetl taska na chwilę
-          taskElement.style.transition = 'background-color 0.3s ease';
-          taskElement.style.backgroundColor = '#fef3c7';
-          setTimeout(() => {
-            taskElement.style.backgroundColor = '';
-            setTimeout(() => {
-              taskElement.style.transition = '';
-            }, 300);
-          }, 2000);
-        }, 100);
-      }
-
-      // Wyczyść state po przewinięciu
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [hierarchicalTasks, loading, location.state, navigate]);
-
-  // ✅ Przywróć pozycję scrolla po powrocie z widoku filtrów
-  useEffect(() => {
-    if (location.pathname === '/tasks' && !loading && hierarchicalTasks.length > 0) {
-      const savedScrollPosition = localStorage.getItem('tasksScrollPosition');
-      if (savedScrollPosition) {
-        const scrollPosition = parseInt(savedScrollPosition, 10);
-        // Użyj setTimeout aby upewnić się, że DOM jest gotowy
-        setTimeout(() => {
-          window.scrollTo({
-            top: scrollPosition,
-            behavior: 'auto' // Użyj 'auto' zamiast 'smooth' dla natychmiastowego przywrócenia
-          });
-          // Wyczyść zapisaną pozycję po przywróceniu
-          localStorage.removeItem('tasksScrollPosition');
-        }, 100);
-      }
-    }
-  }, [location.pathname, loading, hierarchicalTasks.length]);
-
-  // Automatyczne zapisywanie ustawień przy zmianach (z debounce)
-  useEffect(() => {
-    if (isAuthenticated) {
-      saveUserSettings();
-    }
-
-    // Cleanup: wyczyść timeout przy unmount lub zmianie zależności
-    return () => {
-      if (saveSettingsTimeoutRef.current) {
-        clearTimeout(saveSettingsTimeoutRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategoryFilters, statusFilter, noCategories, sortBy, sortOrder, visibleColumns, dateFrom, dateTo, isAuthenticated]);
-
-  // Funkcja do ładowania ustawień użytkownika
-  const loadUserSettings = async () => {
-    if (!isAuthenticated) {
-      setSettingsLoaded(true);
-      return;
-    }
-
-    try {
-      const response = await fetchWithAuth(`${API_URL}/api/user/settings`);
-
-      if (!response.ok) {
-        console.warn('Failed to load user settings, using defaults');
-        setSettingsLoaded(true);
-        return;
-      }
-
-      const data = await response.json();
-      if (data.settings && Object.keys(data.settings).length > 0) {
-        // Załaduj ustawienia do contextu
-        if (data.settings.selectedCategoryFilters && tasksContext?.setSelectedCategoryFilters) {
-          tasksContext.setSelectedCategoryFilters(data.settings.selectedCategoryFilters);
-        }
-        if (data.settings.statusFilter && tasksContext?.setStatusFilter) {
-          tasksContext.setStatusFilter(data.settings.statusFilter);
-        }
-        if (data.settings.noCategories !== undefined && tasksContext?.setNoCategories) {
-          tasksContext.setNoCategories(data.settings.noCategories);
-        }
-        if (data.settings.sortBy) {
-          setSortBy(data.settings.sortBy);
-        }
-        if (data.settings.sortOrder) {
-          setSortOrder(data.settings.sortOrder);
-        }
-        if (data.settings.visibleColumns) {
-          setVisibleColumns(data.settings.visibleColumns);
-        }
-        if (data.settings.dateFrom) {
-          setDateFrom(data.settings.dateFrom);
-        }
-        if (data.settings.dateTo) {
-          setDateTo(data.settings.dateTo);
-        }
-      }
-      setSettingsLoaded(true);
-    } catch (err) {
-      console.warn('Error loading user settings:', err);
-      setSettingsLoaded(true);
-      // Nie pokazuj błędu użytkownikowi, po prostu użyj domyślnych ustawień
-    }
-  };
-
-  // Funkcja do zapisywania ustawień użytkownika (z debounce)
-  const saveUserSettings = () => {
-    if (!isAuthenticated) return;
-
-    // Wyczyść poprzedni timeout
-    if (saveSettingsTimeoutRef.current) {
-      clearTimeout(saveSettingsTimeoutRef.current);
-    }
-
-    // Ustaw nowy timeout - zapisz po 1 sekundzie od ostatniej zmiany
-    saveSettingsTimeoutRef.current = setTimeout(async () => {
-      try {
-        const settings = {
-          selectedCategoryFilters,
-          statusFilter,
-          sortBy,
-          sortOrder,
-          visibleColumns,
-          dateFrom,
-          dateTo
-        };
-
-        const response = await fetchWithAuth(`${API_URL}/api/user/settings`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            settings: settings
-          })
-        });
-
-        if (!response.ok) {
-          console.warn('Failed to save user settings');
-        }
-      } catch (err) {
-        console.warn('Error saving user settings:', err);
-        // Nie pokazuj błędu użytkownikowi
-      }
-    }, 1000); // 1 sekunda debounce
-  };
+  useTaskListScroll({ location, navigate, loading, hierarchicalTasks });
 
   const toggleComplete = async (taskId, currentStatus) => {
     try {
@@ -527,132 +383,6 @@ function TasksGrid({ isAuthenticated }) {
   };
 
 
-  // ========== TASK CATEGORY MANAGEMENT FUNCTIONS ==========
-
-  const handleToggleTaskCategory = async (taskId, categoryId, isAssigned) => {
-    try {
-      if (isAssigned) {
-        // Remove category - check if task has subtasks that have this category
-        const currentTask = tasks.find(t => t.id === taskId);
-        const outgoingRelations = currentTask?.related_tasks?.outgoing || [];
-        const subtaskIds = outgoingRelations.map(rel => rel.target_task_id);
-
-        let shouldRemoveFromSubtasks = false;
-
-        if (subtaskIds.length > 0) {
-          // Check if any subtasks have this category
-          const subtasksWithCategory = subtaskIds.filter(subtaskId => {
-            const subtask = tasks.find(t => t.id === subtaskId);
-            if (!subtask) return false;
-            const subtaskCategories = subtask.categories || [];
-            return subtaskCategories.some(cat => cat.id === categoryId);
-          });
-
-          if (subtasksWithCategory.length > 0) {
-            // Ask user if they want to remove category from all subtasks
-            const categoryName = categories.find(cat => cat.id === categoryId)?.name || 'this category';
-            const confirmMessage = `This task has ${subtasksWithCategory.length} subtask(s) that have ${categoryName}. Do you want to remove ${categoryName} from all subtasks as well?`;
-            shouldRemoveFromSubtasks = window.confirm(confirmMessage);
-          }
-        }
-
-        // Remove category from main task
-        const response = await fetchWithAuth(`${API_URL}/api/tasks/${taskId}/categories/${categoryId}`, {
-          method: 'DELETE',
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Nie udało się usunąć kategorii');
-        }
-
-        // If user confirmed, remove category from all subtasks that have it
-        if (shouldRemoveFromSubtasks && subtaskIds.length > 0) {
-          const removePromises = subtaskIds.map(subtaskId => {
-            const subtask = tasks.find(t => t.id === subtaskId);
-            if (!subtask) return Promise.resolve();
-            const subtaskCategories = subtask.categories || [];
-            const hasCategory = subtaskCategories.some(cat => cat.id === categoryId);
-            if (hasCategory) {
-              return fetchWithAuth(`${API_URL}/api/tasks/${subtaskId}/categories/${categoryId}`, {
-                method: 'DELETE',
-              });
-            }
-            return Promise.resolve();
-          });
-
-          // Wait for all removals to complete
-          const results = await Promise.allSettled(removePromises);
-          const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
-          if (failed.length > 0) {
-            console.warn(`Failed to remove category from ${failed.length} subtask(s)`);
-          }
-        }
-
-      } else {
-        // Add category - check if task has subtasks that don't have this category
-        const currentTask = tasks.find(t => t.id === taskId);
-        const outgoingRelations = currentTask?.related_tasks?.outgoing || [];
-        const subtaskIds = outgoingRelations.map(rel => rel.target_task_id);
-
-        let shouldAssignToSubtasks = false;
-
-        if (subtaskIds.length > 0) {
-          // Check if all subtasks have this category
-          const subtasksWithoutCategory = subtaskIds.filter(subtaskId => {
-            const subtask = tasks.find(t => t.id === subtaskId);
-            if (!subtask) return false;
-            const subtaskCategories = subtask.categories || [];
-            return !subtaskCategories.some(cat => cat.id === categoryId);
-          });
-
-          if (subtasksWithoutCategory.length > 0) {
-            // Ask user if they want to assign category to all subtasks
-            const categoryName = categories.find(cat => cat.id === categoryId)?.name || 'this category';
-            const confirmMessage = `This task has ${subtasksWithoutCategory.length} subtask(s) that don't have ${categoryName}. Do you want to assign ${categoryName} to all subtasks as well?`;
-            shouldAssignToSubtasks = window.confirm(confirmMessage);
-          }
-        }
-
-        // Add category to main task
-        const response = await fetchWithAuth(`${API_URL}/api/tasks/${taskId}/categories`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ category_id: categoryId }),
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Nie udało się dodać kategorii');
-        }
-
-        // If user confirmed, assign category to all subtasks
-        if (shouldAssignToSubtasks && subtaskIds.length > 0) {
-          const assignPromises = subtaskIds.map(subtaskId =>
-            fetchWithAuth(`${API_URL}/api/tasks/${subtaskId}/categories`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ category_id: categoryId }),
-            })
-          );
-
-          // Wait for all assignments to complete
-          const results = await Promise.allSettled(assignPromises);
-          const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
-          if (failed.length > 0) {
-            console.warn(`Failed to assign category to ${failed.length} subtask(s)`);
-          }
-        }
-
-      }
-      fetchTasks(); // Refresh tasks to update categories
-    } catch (err) {
-      setError(err.message || 'Nie udało się zaktualizować kategorii zadania');
-    }
-  };
-
   const exportToJSON = async () => {
     try {
       setError('');
@@ -718,57 +448,6 @@ function TasksGrid({ isAuthenticated }) {
     }
 
     e.target.value = '';
-  };
-
-  // Get available tasks for subtask selection (exclude current task and its children)
-  const getAvailableTasksForSubtask = (parentTaskId) => {
-    if (!parentTaskId) return [];
-
-    // Find the parent task
-    const parentTask = tasks.find(t => t.id === parentTaskId);
-    if (!parentTask) return [];
-
-    // Get all child IDs recursively
-    const getAllChildIds = (taskId, visited = new Set()) => {
-      if (visited.has(taskId)) return []; // Prevent cycles
-      visited.add(taskId);
-
-      const task = tasks.find(t => t.id === taskId);
-      if (!task) return [];
-
-      const relations = task.related_tasks || {};
-      const outgoing = relations.outgoing || [];
-      const incoming = relations.incoming || [];
-
-      let childIds = [];
-      outgoing.forEach(rel => {
-        childIds.push(rel.target_task_id);
-        childIds = childIds.concat(getAllChildIds(rel.target_task_id, visited));
-      });
-      incoming.forEach(rel => {
-        childIds.push(rel.source_task_id);
-        childIds = childIds.concat(getAllChildIds(rel.source_task_id, visited));
-      });
-
-      return childIds;
-    };
-
-    const excludeIds = new Set([parentTaskId, ...getAllChildIds(parentTaskId)]);
-
-    // Filter out: current task, its children, and tasks that would create cycles
-    return tasks.filter(task => {
-      // Don't include the parent task itself
-      if (task.id === parentTaskId) return false;
-      // Don't include children (would create cycle)
-      if (excludeIds.has(task.id)) return false;
-      // Don't include tasks that already have this task as a child (would create cycle)
-      const taskRelations = task.related_tasks || {};
-      const taskOutgoing = taskRelations.outgoing || [];
-      const taskIncoming = taskRelations.incoming || [];
-      const hasRelation = taskOutgoing.some(rel => rel.target_task_id === parentTaskId) ||
-        taskIncoming.some(rel => rel.source_task_id === parentTaskId);
-      return !hasRelation;
-    });
   };
 
   // Update refs when values change (no dependencies = runs every render but doesn't cause re-render)
