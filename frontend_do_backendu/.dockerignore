@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.*
+*.local
+src.zip
+.git
+.DS_Store
+npm-debug.log*

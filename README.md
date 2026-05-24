@@ -2,6 +2,40 @@
 
 Uproszczony monolit: Flask (REST + JWT) + React (Vite). Baza: **PostgreSQL** w kontenerze Docker. Schemat tworzy `SQLAlchemy` (`db.create_all()` przy starcie, jeśli brakuje tabel).
 
+## Szybki start — cały stack w Dockerze (Mac + Windows, zalecane)
+
+Wymaga tylko Dockera. Z katalogu głównego:
+
+```bash
+docker compose up -d --build
+```
+
+Uruchamia trzy serwisy: `postgres` + `backend` (Flask) + `frontend` (Vite/`frontend_do_backendu`).
+
+| Usługa   | Domyślny URL          |
+|----------|-----------------------|
+| Frontend | http://localhost:5173 |
+| Backend  | http://localhost:5000 |
+| Postgres | localhost:5432        |
+
+Logowanie konta testowego: **TestUser / TestUserPassword!**.
+
+**Zajęte porty?** (np. lokalny Postgres na 5432 albo macOS AirPlay na 5000) — utwórz plik `.env` obok `docker-compose.yml` (jest gitignored, więc nie wpływa na innych):
+
+```env
+POSTGRES_HOST_PORT=5433
+BACKEND_HOST_PORT=5050
+FRONTEND_HOST_PORT=5173
+```
+
+Frontend automatycznie wskaże backend na `http://localhost:${BACKEND_HOST_PORT}`.
+
+Zatrzymanie: `docker compose down` (dane bazy zostają w wolumenie; `down -v` je usuwa).
+
+---
+
+Poniżej alternatywny tryb **natywny** (bez kontenerów dla backendu/frontendu).
+
 ## Wymagania
 
 - Docker (do uruchomienia PostgreSQL)

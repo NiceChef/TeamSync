@@ -22,6 +22,8 @@ wheels/
 MANIFEST
 
 # Virtual Environment
+.venv/
+backend/.venv/
 backend/venv/
 backend/env/
 backend/ENV/
@@ -48,13 +50,13 @@ venv.bak/
 backend/.env_backend_dev
 backend/.env_backend_prod
 
-# Frontend environment files
-frontend/.env
-frontend/.env.local
-frontend/.env.development
-frontend/.env.development.local
-frontend/.env.production
-frontend/.env.production.local
+# Frontend environment files (oba frontendy)
+frontend*/.env
+frontend*/.env.local
+frontend*/.env.development
+frontend*/.env.development.local
+frontend*/.env.production
+frontend*/.env.production.local
 
 # Node.js / Frontend
 node_modules/
