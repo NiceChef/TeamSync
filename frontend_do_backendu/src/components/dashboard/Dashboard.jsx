@@ -1,107 +1,105 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-    Activity,
-    CheckCircle2,
-    ClipboardList,
+    CalendarDays,
+    CheckSquare,
     FolderKanban,
     Users,
 } from 'lucide-react';
 import StatCard from './StatCard';
-import ReportCard from './ReportCard';
+import { API_URL, fetchWithAuth } from '../../api/authFetch';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const PRIORITY_BADGE = {
+    high: 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200',
+    medium: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200',
+    low: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+};
+
+const PRIORITY_LABEL = { high: 'Wysoki', medium: 'Średni', low: 'Niski' };
+
+const EVENT_BADGE = {
+    meeting: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200',
+    deadline: 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200',
+    reminder: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200',
+};
+
+const EVENT_LABEL = { meeting: 'Spotkanie', deadline: 'Termin', reminder: 'Przypomnienie' };
+
+function formatEventDateTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    return date.toLocaleString('pl-PL', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+function ListSkeleton() {
+    return (
+        <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                    key={index}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+                >
+                    <div className="space-y-2">
+                        <div className="h-4 w-44 rounded bg-slate-200 dark:bg-slate-800" />
+                        <div className="h-3 w-28 rounded bg-slate-200 dark:bg-slate-800" />
+                    </div>
+                    <div className="h-5 w-16 rounded-full bg-slate-200 dark:bg-slate-800" />
+                </div>
+            ))}
+        </div>
+    );
+}
 
 export default function Dashboard() {
-    const [tasksReport, setTasksReport] = useState('');
-    const [activityReport, setActivityReport] = useState('');
-    const [projectReport, setProjectReport] = useState('');
+    const [stats, setStats] = useState(null);
+    const [recentTasks, setRecentTasks] = useState([]);
+    const [upcomingEvents, setUpcomingEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const token = () => localStorage.getItem('access_token');
-
     useEffect(() => {
-        async function loadReports() {
+        let cancelled = false;
+
+        async function load() {
             setLoading(true);
             setError('');
-
             try {
-                const headers = { Authorization: `Bearer ${token()}` };
-
-                const [tasksResponse, activityResponse, projectsResponse] = await Promise.all([
-                    fetch(`${API_URL}/api/reports/tasks-summary`, { headers }),
-                    fetch(`${API_URL}/api/reports/user-activity`, { headers }),
-                    fetch(`${API_URL}/api/reports/project-progress`, { headers }),
+                const [statsRes, tasksRes, eventsRes] = await Promise.all([
+                    fetchWithAuth(`${API_URL}/api/dashboard/stats`),
+                    fetchWithAuth(`${API_URL}/api/dashboard/recent-tasks`),
+                    fetchWithAuth(`${API_URL}/api/dashboard/upcoming-events`),
                 ]);
 
-                if (!tasksResponse.ok || !activityResponse.ok || !projectsResponse.ok) {
+                if (!statsRes.ok || !tasksRes.ok || !eventsRes.ok) {
                     throw new Error('Nie udało się pobrać danych dashboardu.');
                 }
 
-                const [tasks, activity, projects] = await Promise.all([
-                    tasksResponse.text(),
-                    activityResponse.text(),
-                    projectsResponse.text(),
+                const [statsData, tasksData, eventsData] = await Promise.all([
+                    statsRes.json(),
+                    tasksRes.json(),
+                    eventsRes.json(),
                 ]);
 
-                setTasksReport(tasks);
-                setActivityReport(activity);
-                setProjectReport(projects);
+                if (cancelled) return;
+                setStats(statsData);
+                setRecentTasks(Array.isArray(tasksData) ? tasksData : []);
+                setUpcomingEvents(Array.isArray(eventsData) ? eventsData : []);
             } catch (err) {
-                setError(err.message || 'Nie udało się pobrać dashboardu.');
+                if (!cancelled) setError(err.message || 'Nie udało się pobrać dashboardu.');
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         }
 
-        loadReports();
-    }, []);
-
-    const stats = useMemo(() => {
-        const visibleTasks = tasksReport.match(/Widoczne zadania:\s*(\d+)/)?.[1] ?? '0';
-        const doneTasks = tasksReport.match(/Zakończone \(completed\):\s*(\d+)/)?.[1] ?? '0';
-        const inProgress = tasksReport.match(/W trakcie \(status\):\s*(\d+)/)?.[1] ?? '0';
-
-        const userLines = activityReport
-            .split('\n')
-            .filter((line) => line.includes(':') && !line.startsWith('==='));
-
-        const groupLines = projectReport
-            .split('\n')
-            .filter((line) => line.includes(':') && !line.startsWith('==='));
-
-        return {
-            visibleTasks,
-            doneTasks,
-            inProgress,
-            users: userLines.length,
-            groups: groupLines.length,
+        load();
+        return () => {
+            cancelled = true;
         };
-    }, [tasksReport, activityReport, projectReport]);
-
-    if (loading) {
-        return (
-            <div className="space-y-8">
-                <div>
-                    <div className="h-9 w-48 rounded-lg bg-slate-200 dark:bg-slate-800" />
-                    <div className="mt-2 h-5 w-64 rounded-lg bg-slate-200 dark:bg-slate-800" />
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    {Array.from({ length: 4 }).map((_, index) => (
-                        <div
-                            key={index}
-                            className="h-36 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-                        >
-                            <div className="h-4 w-28 rounded bg-slate-200 dark:bg-slate-800" />
-                            <div className="mt-4 h-8 w-16 rounded bg-slate-200 dark:bg-slate-800" />
-                            <div className="mt-6 h-3 w-36 rounded bg-slate-200 dark:bg-slate-800" />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
+    }, []);
 
     return (
         <div className="space-y-8">
@@ -122,45 +120,105 @@ export default function Dashboard() {
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard
-                    label="Widoczne zadania"
-                    value={stats.visibleTasks}
-                    helper="Wszystkie zadania dostępne dla konta"
-                    icon={ClipboardList}
+                    label="Projekty"
+                    value={loading ? '—' : stats?.projects ?? 0}
+                    helper="Projekty widoczne dla konta"
+                    icon={FolderKanban}
                 />
                 <StatCard
-                    label="Zakończone"
-                    value={stats.doneTasks}
-                    helper="Zadania oznaczone jako wykonane"
-                    icon={CheckCircle2}
+                    label="Aktywne zadania"
+                    value={loading ? '—' : stats?.active_tasks ?? 0}
+                    helper="Zadania jeszcze niezakończone"
+                    icon={CheckSquare}
                 />
                 <StatCard
-                    label="W trakcie"
-                    value={stats.inProgress}
-                    helper="Zadania ze statusem w toku"
-                    icon={Activity}
+                    label="Nadchodzące wydarzenia"
+                    value={loading ? '—' : stats?.upcoming_events ?? 0}
+                    helper="Wydarzenia w przyszłości"
+                    icon={CalendarDays}
                 />
                 <StatCard
-                    label="Grupy"
-                    value={stats.groups}
-                    helper="Grupy/projekty widoczne w raporcie"
+                    label="Członkowie zespołu"
+                    value={loading ? '—' : stats?.members ?? 0}
+                    helper="Osoby w Twojej organizacji"
                     icon={Users}
                 />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-2">
-                <ReportCard title="Raport zadań" icon={ClipboardList}>
-                    {tasksReport}
-                </ReportCard>
+                <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        Ostatnie zadania
+                    </h3>
+                    {loading ? (
+                        <ListSkeleton />
+                    ) : recentTasks.length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Brak zadań do wyświetlenia.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {recentTasks.map((task) => {
+                                const priority = task.priority || 'medium';
+                                return (
+                                    <div
+                                        key={task.id}
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                                {task.topic}
+                                            </p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                {task.assignee?.username || 'Nieprzypisane'}
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_BADGE[priority] || PRIORITY_BADGE.medium}`}
+                                        >
+                                            {PRIORITY_LABEL[priority] || priority}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
 
-                <ReportCard title="Aktywność użytkowników" icon={Users}>
-                    {activityReport}
-                </ReportCard>
-
-                <div className="xl:col-span-2">
-                    <ReportCard title="Postęp projektów i grup" icon={FolderKanban}>
-                        {projectReport}
-                    </ReportCard>
-                </div>
+                <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        Nadchodzące wydarzenia
+                    </h3>
+                    {loading ? (
+                        <ListSkeleton />
+                    ) : upcomingEvents.length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Brak nadchodzących wydarzeń.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {upcomingEvents.map((event) => {
+                                const type = event.event_type || 'meeting';
+                                return (
+                                    <div
+                                        key={event.id}
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                                {event.title}
+                                            </p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                {formatEventDateTime(event.start)}
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${EVENT_BADGE[type] || EVENT_BADGE.meeting}`}
+                                        >
+                                            {EVENT_LABEL[type] || type}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
             </div>
         </div>
     );

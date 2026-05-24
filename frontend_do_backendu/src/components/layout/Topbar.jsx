@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Menu, Moon, Sun, User } from 'lucide-react';
-import { navItems } from './navItems';
+import { navItemsForRole } from './navItems';
+import NotificationsBell from '../notifications/NotificationsBell';
+import GlobalSearch from '../search/GlobalSearch';
 
 export default function Topbar({ user, onLogout }) {
     const navigate = useNavigate();
@@ -51,7 +53,7 @@ export default function Topbar({ user, onLogout }) {
 
                         {isMenuOpen && (
                             <div className="absolute left-0 top-12 z-50 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                                {navItems.map(({ to, label, icon: Icon }) => (
+                                {navItemsForRole(user?.role).map(({ to, label, icon: Icon }) => (
                                     <button
                                         key={to}
                                         type="button"
@@ -76,7 +78,13 @@ export default function Topbar({ user, onLogout }) {
                     </div>
                 </div>
 
+                <div className="hidden min-w-0 flex-1 justify-center px-4 md:flex">
+                    <GlobalSearch />
+                </div>
+
                 <div className="flex shrink-0 items-center gap-2">
+                    <NotificationsBell />
+
                     <button
                         type="button"
                         onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}

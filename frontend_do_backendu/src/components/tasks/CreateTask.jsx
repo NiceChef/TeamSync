@@ -35,11 +35,13 @@ function CreateTask({ isAuthenticated }) {
     assignee_user_id: '',
     group_id: '',
     status_id: '',
+    project_id: '',
   });
 
   const [taskStatuses, setTaskStatuses] = useState([]);
   const [assignUsers, setAssignUsers] = useState([]);
   const [groupsList, setGroupsList] = useState([]);
+  const [projectsList, setProjectsList] = useState([]);
   const [meUser, setMeUser] = useState(null);
 
   // Funkcje pomocnicze do autoryzacji
@@ -222,6 +224,8 @@ function CreateTask({ isAuthenticated }) {
     (async () => {
       const stRes = await fetchWithAuth(`${API_URL}/api/task-statuses`);
       if (stRes.ok) setTaskStatuses(await stRes.json());
+      const pRes = await fetchWithAuth(`${API_URL}/api/projects`);
+      if (pRes.ok) setProjectsList(await pRes.json());
       const meRes = await fetchWithAuth(`${API_URL}/api/auth/me`);
       if (!meRes.ok) return;
       const me = await meRes.json();
@@ -383,6 +387,9 @@ function CreateTask({ isAuthenticated }) {
       }
       if (newTask.group_id !== '' && newTask.group_id != null) {
         taskData.group_id = Number(newTask.group_id);
+      }
+      if (newTask.project_id !== '' && newTask.project_id != null) {
+        taskData.project_id = Number(newTask.project_id);
       }
 
       const response = await fetchWithAuth(`${API_URL}/api/tasks`, {
@@ -667,6 +674,28 @@ function CreateTask({ isAuthenticated }) {
                   <option value="low">Niski</option>
                   <option value="medium">Średni</option>
                   <option value="high">Wysoki</option>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel>Projekt</FieldLabel>
+                <Select
+                  id="create-project"
+                  value={newTask.project_id === '' ? '' : String(newTask.project_id)}
+                  onChange={(e) =>
+                    setNewTask((p) => ({
+                      ...p,
+                      project_id: e.target.value === '' ? '' : Number(e.target.value),
+                    }))
+                  }
+                  disabled={submitting}
+                >
+                  <option value="">Brak</option>
+                  {projectsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
                 </Select>
               </Field>
 

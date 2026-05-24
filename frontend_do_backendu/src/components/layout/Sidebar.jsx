@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom';
-import { navItems } from './navItems';
+import { navItemsForRole } from './navItems';
 
 export default function Sidebar({ user }) {
+    const items = navItemsForRole(user?.role);
     return (
         <aside className="hidden min-h-screen w-64 shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:flex lg:flex-col">
             <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
@@ -17,7 +18,7 @@ export default function Sidebar({ user }) {
             </div>
 
             <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-                {navItems.map(({ to, label, icon: Icon }) => (
+                {items.map(({ to, label, icon: Icon }) => (
                     <NavLink
                         key={to}
                         to={to}

@@ -57,8 +57,11 @@ export default function TaskRow({
                             </span>
                         )}
 
-                        <span
-                            className={`flex-1 break-words ${task.completed
+                        <button
+                            type="button"
+                            onClick={() => navigate(`/tasks/${task.id}`)}
+                            title="Pokaż szczegóły zadania"
+                            className={`flex-1 break-words text-left transition-colors hover:text-indigo-600 hover:underline dark:hover:text-indigo-300 ${task.completed
                                 ? 'font-medium text-slate-500 line-through dark:text-slate-500'
                                 : task.displayLevel === 0
                                     ? 'font-semibold text-slate-900 dark:text-slate-100'
@@ -66,7 +69,7 @@ export default function TaskRow({
                                 }`}
                         >
                             {task.topic}
-                        </span>
+                        </button>
 
                         {task.notes && task.notes.trim() && (
                             <button

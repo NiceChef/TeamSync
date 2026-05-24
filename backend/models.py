@@ -146,6 +146,7 @@ class Task(db.Model):
     version = db.Column(db.Integer, nullable=False, default=1)
     assignee_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     group_id = db.Column(db.Integer, db.ForeignKey('groups.id'), nullable=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
 
     status = db.relationship('TaskStatus', backref='tasks', lazy=True)
     assignee = db.relationship('User', foreign_keys=[assignee_user_id], backref='assigned_tasks', lazy=True)
@@ -278,6 +279,7 @@ class Task(db.Model):
             'assignee': assignee_d,
             'group_id': self.group_id,
             'group': group_d,
+            'project_id': self.project_id,
         }
 
         if include_relations:
@@ -462,6 +464,117 @@ class Notification(db.Model):
             'read': self.read,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+
+project_members = db.Table(
+    'project_members',
+    db.Column('project_id', db.Integer, db.ForeignKey('projects.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('joined_at', db.DateTime, default=datetime.utcnow),
+)
+
+
+calendar_event_attendees = db.Table(
+    'calendar_event_attendees',
+    db.Column('event_id', db.Integer, db.ForeignKey('calendar_events.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+)
+
+
+class Project(db.Model):
+    __tablename__ = 'projects'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='draft')
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('groups.id'), nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    organization = db.relationship('Organization', backref='projects', lazy=True)
+    group = db.relationship('Group', backref='projects', lazy=True)
+    members = db.relationship('User', secondary=project_members, backref='projects')
+    tasks = db.relationship('Task', backref='project', lazy=True)
+
+    def _progress(self):
+        try:
+            total = len(self.tasks)
+            if not total:
+                return 0
+            done = sum(1 for t in self.tasks if t.completed)
+            return round(done / total * 100)
+        except Exception:
+            return 0
+
+    def to_dict(self, include_members=False, include_tasks=False):
+        d = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'status': self.status,
+            'organization_id': self.organization_id,
+            'group_id': self.group_id,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'progress_percent': self._progress(),
+            'task_count': len(self.tasks) if self.tasks is not None else 0,
+        }
+        if include_members:
+            d['members'] = [
+                {'id': u.id, 'username': u.username, 'email': u.email}
+                for u in self.members
+            ]
+        else:
+            d['member_count'] = len(self.members)
+        if include_tasks:
+            d['tasks'] = [t.to_dict() for t in self.tasks]
+        return d
+
+
+class CalendarEvent(db.Model):
+    __tablename__ = 'calendar_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    start = db.Column(db.DateTime, nullable=False)
+    end = db.Column(db.DateTime, nullable=False)
+    event_type = db.Column(db.String(20), nullable=False, default='meeting')
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    project = db.relationship('Project', backref='events', lazy=True)
+    attendees = db.relationship('User', secondary=calendar_event_attendees, backref='calendar_events')
+
+    def to_dict(self, include_attendees=False):
+        d = {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'start': self.start.isoformat() if self.start else None,
+            'end': self.end.isoformat() if self.end else None,
+            'event_type': self.event_type or 'meeting',
+            'project_id': self.project_id,
+            'task_id': self.task_id,
+            'organization_id': self.organization_id,
+            'created_by_id': self.created_by_id,
+            'version': int(self.version or 1),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_attendees:
+            d['attendees'] = [
+                {'id': u.id, 'username': u.username, 'email': u.email}
+                for u in self.attendees
+            ]
+        return d
 
 
 class PasswordResetToken(db.Model):

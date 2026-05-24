@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from flask import Blueprint, request, jsonify, current_app, send_file, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -23,6 +23,8 @@ from models import (
     TaskAttachment,
     Notification,
     Group,
+    Project,
+    CalendarEvent,
 )
 from task_access import visible_tasks_condition, task_visible, can_edit_task, can_delete_task
 
@@ -64,6 +66,53 @@ def _can_manage_group(user, group):
     except Exception:
         pass
     return user.id == group.created_by_id
+
+
+def _project_visible(user, project):
+    if not project or not _org_match(user.organization_id, project.organization_id):
+        return False
+    if user.role == 'client':
+        try:
+            return user in project.members or user.id == project.created_by_id
+        except Exception:
+            return user.id == project.created_by_id
+    return True
+
+
+def _can_manage_project(user, project):
+    if not project or user.role == 'client':
+        return False
+    if not _org_match(user.organization_id, project.organization_id):
+        return False
+    try:
+        return user in project.members or user.id == project.created_by_id
+    except Exception:
+        return user.id == project.created_by_id
+
+
+def _user_can_use_project(user, project):
+    if not project or not _org_match(user.organization_id, project.organization_id):
+        return False
+    if user.role == 'client':
+        try:
+            return user in project.members or user.id == project.created_by_id
+        except Exception:
+            return False
+    return True
+
+
+def _parse_dt(value):
+    """ISO 8601 (z 'Z' lub bez) -> naive UTC datetime. Zwraca None gdy puste/błędne."""
+    if not value:
+        return None
+    try:
+        s = str(value).replace('Z', '+00:00')
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+    except (ValueError, TypeError):
+        return None
 
 
 def _default_todo_status():
@@ -247,6 +296,10 @@ def get_tasks():
             if ts:
                 query = query.filter(Task.status_id == ts.id)
 
+        project_id = request.args.get('project_id', type=int)
+        if project_id is not None:
+            query = query.filter(Task.project_id == project_id)
+
         tasks = query.all()
         include_relations = request.args.get('include_relations', 'false').lower() == 'true'
         
@@ -342,6 +395,15 @@ def create_task():
     if pr not in ('low', 'medium', 'high'):
         pr = 'medium'
 
+    project_id = data.get('project_id')
+    if project_id is not None:
+        p = Project.query.get(int(project_id))
+        if not _user_can_use_project(me, p):
+            return jsonify({'error': 'Invalid project'}), 400
+        project_id = int(project_id)
+    else:
+        project_id = None
+
     task = Task(
         topic=data['topic'],
         notes=data.get('notes', ''),
@@ -354,6 +416,7 @@ def create_task():
         version=1,
         assignee_user_id=assignee_user_id,
         group_id=group_id,
+        project_id=project_id,
     )
 
     db.session.add(task)
@@ -475,6 +538,16 @@ def update_task(task_id):
             if not _user_can_use_group(me, g):
                 return jsonify({'error': 'Invalid group'}), 400
             task.group_id = g.id
+
+    if 'project_id' in data:
+        pid = data['project_id']
+        if pid is None:
+            task.project_id = None
+        else:
+            p = Project.query.get(int(pid))
+            if not _user_can_use_project(me, p):
+                return jsonify({'error': 'Invalid project'}), 400
+            task.project_id = p.id
 
     task.version = int(task.version or 1) + 1
 
@@ -1177,6 +1250,394 @@ def report_project_progress():
     ud = uq.filter_by(completed=True).count()
     lines.append(f'Bez grupy: zakończone {ud} / {ut} łącznie')
     return Response('\n'.join(lines), mimetype='text/plain; charset=utf-8')
+
+
+# ========== PROJECTS ENDPOINTS ==========
+
+@api.route('/projects', methods=['GET'])
+@jwt_required()
+def list_projects():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    q = Project.query
+    if me.organization_id is not None:
+        q = q.filter(Project.organization_id == me.organization_id)
+    else:
+        q = q.filter(Project.organization_id.is_(None))
+    status = (request.args.get('status') or '').strip()
+    if status in ('active', 'archived', 'draft'):
+        q = q.filter(Project.status == status)
+    sq = (request.args.get('q') or '').strip()
+    if sq:
+        pat = f'%{sq}%'
+        q = q.filter(db_or(Project.name.ilike(pat), Project.description.ilike(pat)))
+    projects = q.order_by(Project.created_at.desc()).limit(200).all()
+    if me.role == 'client':
+        projects = [p for p in projects if _project_visible(me, p)]
+    return jsonify([p.to_dict() for p in projects]), 200
+
+
+@api.route('/projects', methods=['POST'])
+@jwt_required()
+def create_project():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    if me.role == 'client':
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    status = data.get('status') or 'draft'
+    if status not in ('active', 'archived', 'draft'):
+        status = 'draft'
+
+    group_id = data.get('group_id')
+    if group_id is not None:
+        g = Group.query.get(int(group_id))
+        if not _user_can_use_group(me, g):
+            return jsonify({'error': 'Invalid group'}), 400
+        group_id = int(group_id)
+
+    p = Project(
+        name=name,
+        description=(data.get('description') or '').strip() or None,
+        status=status,
+        organization_id=me.organization_id,
+        group_id=group_id,
+        created_by_id=me.id,
+    )
+    db.session.add(p)
+    db.session.flush()
+    if me not in p.members:
+        p.members.append(me)
+    db.session.commit()
+    return jsonify(p.to_dict(include_members=True)), 201
+
+
+@api.route('/projects/<int:pid>', methods=['GET'])
+@jwt_required()
+def get_project(pid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    p = Project.query.get_or_404(pid)
+    if not _project_visible(me, p):
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(p.to_dict(include_members=True, include_tasks=True)), 200
+
+
+@api.route('/projects/<int:pid>', methods=['PUT'])
+@jwt_required()
+def update_project(pid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    p = Project.query.get_or_404(pid)
+    if not _can_manage_project(me, p):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+    if 'name' in data:
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': 'name is required'}), 400
+        p.name = name
+    if 'description' in data:
+        p.description = (data.get('description') or '').strip() or None
+    if 'status' in data and data['status'] in ('active', 'archived', 'draft'):
+        p.status = data['status']
+    if 'group_id' in data:
+        gid = data['group_id']
+        if gid is None:
+            p.group_id = None
+        else:
+            g = Group.query.get(int(gid))
+            if not _user_can_use_group(me, g):
+                return jsonify({'error': 'Invalid group'}), 400
+            p.group_id = g.id
+    db.session.commit()
+    return jsonify(p.to_dict(include_members=True)), 200
+
+
+@api.route('/projects/<int:pid>', methods=['DELETE'])
+@jwt_required()
+def delete_project(pid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    p = Project.query.get_or_404(pid)
+    if me.id != p.created_by_id:
+        return jsonify({'error': 'Only the project owner can delete this project'}), 403
+    for t in list(p.tasks):
+        t.project_id = None
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'message': 'Project deleted'}), 200
+
+
+@api.route('/projects/<int:pid>/members', methods=['POST'])
+@jwt_required()
+def add_project_member(pid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    p = Project.query.get_or_404(pid)
+    if not _can_manage_project(me, p):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+    uid = data.get('user_id')
+    if uid is None:
+        return jsonify({'error': 'user_id required'}), 400
+    u = User.query.get(int(uid))
+    if not u or not _org_match(u.organization_id, p.organization_id):
+        return jsonify({'error': 'User not in same organization'}), 400
+    if u not in p.members:
+        p.members.append(u)
+    db.session.commit()
+    return jsonify(p.to_dict(include_members=True)), 200
+
+
+@api.route('/projects/<int:pid>/members/<int:uid>', methods=['DELETE'])
+@jwt_required()
+def remove_project_member(pid, uid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    p = Project.query.get_or_404(pid)
+    if not _can_manage_project(me, p):
+        return jsonify({'error': 'Forbidden'}), 403
+    u = User.query.get_or_404(uid)
+    if u in p.members:
+        p.members.remove(u)
+    db.session.commit()
+    return jsonify({'message': 'Member removed'}), 200
+
+
+# ========== CALENDAR EVENTS ENDPOINTS ==========
+
+def _event_visible(user, event):
+    return event is not None and _org_match(user.organization_id, event.organization_id)
+
+
+@api.route('/events', methods=['GET'])
+@jwt_required()
+def list_events():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    q = CalendarEvent.query
+    if me.organization_id is not None:
+        q = q.filter(CalendarEvent.organization_id == me.organization_id)
+    else:
+        q = q.filter(CalendarEvent.organization_id.is_(None))
+    start = _parse_dt(request.args.get('start'))
+    end = _parse_dt(request.args.get('end'))
+    if start is not None:
+        q = q.filter(CalendarEvent.end >= start)
+    if end is not None:
+        q = q.filter(CalendarEvent.start <= end)
+    pid = request.args.get('project_id')
+    if pid:
+        try:
+            q = q.filter(CalendarEvent.project_id == int(pid))
+        except (ValueError, TypeError):
+            pass
+    rows = q.order_by(CalendarEvent.start.asc()).limit(500).all()
+    return jsonify([e.to_dict(include_attendees=True) for e in rows]), 200
+
+
+@api.route('/events', methods=['POST'])
+@jwt_required()
+def create_event():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    if me.role == 'client':
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'title is required'}), 400
+    start = _parse_dt(data.get('start'))
+    end = _parse_dt(data.get('end'))
+    if start is None or end is None:
+        return jsonify({'error': 'Invalid start/end. Use ISO 8601 datetime.'}), 400
+    if end < start:
+        return jsonify({'error': 'end must be after start'}), 400
+    event_type = data.get('event_type') or 'meeting'
+    if event_type not in ('meeting', 'deadline', 'reminder'):
+        event_type = 'meeting'
+
+    project_id = data.get('project_id')
+    if project_id is not None:
+        p = Project.query.get(int(project_id))
+        if not _user_can_use_project(me, p):
+            return jsonify({'error': 'Invalid project'}), 400
+        project_id = int(project_id)
+
+    task_id = data.get('task_id')
+    if task_id is not None:
+        t = Task.query.get(int(task_id))
+        if not t or not task_visible(t, me):
+            return jsonify({'error': 'Invalid task'}), 400
+        task_id = int(task_id)
+
+    ev = CalendarEvent(
+        title=title,
+        description=(data.get('description') or '').strip() or None,
+        start=start,
+        end=end,
+        event_type=event_type,
+        project_id=project_id,
+        task_id=task_id,
+        organization_id=me.organization_id,
+        created_by_id=me.id,
+        version=1,
+    )
+    db.session.add(ev)
+    db.session.flush()
+    if me not in ev.attendees:
+        ev.attendees.append(me)
+    for uid in (data.get('attendee_ids') or []):
+        u = User.query.get(int(uid))
+        if u and _org_match(u.organization_id, me.organization_id) and u not in ev.attendees:
+            ev.attendees.append(u)
+    db.session.commit()
+    return jsonify(ev.to_dict(include_attendees=True)), 201
+
+
+@api.route('/events/<int:eid>', methods=['GET'])
+@jwt_required()
+def get_event(eid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    ev = CalendarEvent.query.get_or_404(eid)
+    if not _event_visible(me, ev):
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(ev.to_dict(include_attendees=True)), 200
+
+
+@api.route('/events/<int:eid>', methods=['PUT'])
+@jwt_required()
+def update_event(eid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    ev = CalendarEvent.query.get_or_404(eid)
+    if not _event_visible(me, ev) or me.role == 'client':
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+
+    if data.get('expected_version') is not None:
+        if int(data['expected_version']) != int(ev.version or 1):
+            return jsonify({
+                'error': 'Conflict',
+                'message': 'Wydarzenie zostało już zaktualizowane przez innego użytkownika.',
+                'current_version': ev.version,
+            }), 409
+
+    if 'title' in data:
+        title = (data.get('title') or '').strip()
+        if not title:
+            return jsonify({'error': 'title is required'}), 400
+        ev.title = title
+    if 'description' in data:
+        ev.description = (data.get('description') or '').strip() or None
+    if 'start' in data:
+        start = _parse_dt(data.get('start'))
+        if start is None:
+            return jsonify({'error': 'Invalid start'}), 400
+        ev.start = start
+    if 'end' in data:
+        end = _parse_dt(data.get('end'))
+        if end is None:
+            return jsonify({'error': 'Invalid end'}), 400
+        ev.end = end
+    if ev.end < ev.start:
+        return jsonify({'error': 'end must be after start'}), 400
+    if 'event_type' in data and data['event_type'] in ('meeting', 'deadline', 'reminder'):
+        ev.event_type = data['event_type']
+    if 'project_id' in data:
+        pid = data['project_id']
+        if pid is None:
+            ev.project_id = None
+        else:
+            p = Project.query.get(int(pid))
+            if not _user_can_use_project(me, p):
+                return jsonify({'error': 'Invalid project'}), 400
+            ev.project_id = p.id
+
+    ev.version = int(ev.version or 1) + 1
+    db.session.commit()
+    return jsonify(ev.to_dict(include_attendees=True)), 200
+
+
+@api.route('/events/<int:eid>', methods=['DELETE'])
+@jwt_required()
+def delete_event(eid):
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    ev = CalendarEvent.query.get_or_404(eid)
+    if not _event_visible(me, ev) or me.role == 'client':
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(ev)
+    db.session.commit()
+    return jsonify({'message': 'Event deleted'}), 200
+
+
+# ========== DASHBOARD (JSON) ENDPOINTS ==========
+
+@api.route('/dashboard/stats', methods=['GET'])
+@jwt_required()
+def dashboard_stats():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    tasks_q = Task.query.filter(visible_tasks_condition(me))
+    active_tasks = tasks_q.filter_by(completed=False).count()
+
+    proj_q = Project.query
+    if me.organization_id is not None:
+        proj_q = proj_q.filter(Project.organization_id == me.organization_id)
+    else:
+        proj_q = proj_q.filter(Project.organization_id.is_(None))
+    projects = proj_q.all()
+    if me.role == 'client':
+        projects = [p for p in projects if _project_visible(me, p)]
+    project_count = len(projects)
+
+    now = datetime.utcnow()
+    ev_q = CalendarEvent.query.filter(CalendarEvent.start >= now)
+    if me.organization_id is not None:
+        ev_q = ev_q.filter(CalendarEvent.organization_id == me.organization_id)
+    else:
+        ev_q = ev_q.filter(CalendarEvent.organization_id.is_(None))
+    upcoming_events = ev_q.count()
+
+    if me.organization_id is not None:
+        member_count = User.query.filter_by(organization_id=me.organization_id).count()
+    else:
+        member_count = 1
+
+    return jsonify({
+        'projects': project_count,
+        'active_tasks': active_tasks,
+        'upcoming_events': upcoming_events,
+        'members': member_count,
+    }), 200
+
+
+@api.route('/dashboard/recent-tasks', methods=['GET'])
+@jwt_required()
+def dashboard_recent_tasks():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    try:
+        limit = min(int(request.args.get('limit', 5)), 50)
+    except (ValueError, TypeError):
+        limit = 5
+    rows = (
+        Task.query.filter(visible_tasks_condition(me))
+        .order_by(Task.updated_at.desc().nullslast(), Task.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return jsonify([t.to_dict() for t in rows]), 200
+
+
+@api.route('/dashboard/upcoming-events', methods=['GET'])
+@jwt_required()
+def dashboard_upcoming_events():
+    me = User.query.get_or_404(int(get_jwt_identity()))
+    try:
+        limit = min(int(request.args.get('limit', 5)), 50)
+    except (ValueError, TypeError):
+        limit = 5
+    now = datetime.utcnow()
+    q = CalendarEvent.query.filter(CalendarEvent.start >= now)
+    if me.organization_id is not None:
+        q = q.filter(CalendarEvent.organization_id == me.organization_id)
+    else:
+        q = q.filter(CalendarEvent.organization_id.is_(None))
+    rows = q.order_by(CalendarEvent.start.asc()).limit(limit).all()
+    return jsonify([e.to_dict() for e in rows]), 200
 
 
 @api.route('/health', methods=['GET'])

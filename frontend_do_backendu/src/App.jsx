@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import TasksGrid from './components/tasks/TasksGrid';
 import EditTask from './components/EditTask';
+import TaskDetail from './components/tasks/TaskDetail';
 import CreateTask from './components/tasks/CreateTask';
 import CreateCategory from './components/CreateCategory';
 import More from './components/More';
@@ -13,6 +14,8 @@ import FilterView from './components/FilterView';
 import Profile from './components/Profile';
 import Groups from './components/Groups';
 import Dashboard from './components/dashboard/Dashboard.jsx';
+import ProjectsList from './components/projects/ProjectsList.jsx';
+import ProjectDetail from './components/projects/ProjectDetail.jsx';
 import { TasksProvider } from './context/TasksContext';
 
 function AuthenticatedApp({ user, handleLogout }) {
@@ -29,10 +32,13 @@ function AuthenticatedApp({ user, handleLogout }) {
     <AppLayout user={user} onLogout={handleLogout}>
       <Routes>
         <Route path="/dashboard" element={<Dashboard isAuthenticated />} />
+        <Route path="/projects" element={<ProjectsList isAuthenticated />} />
+        <Route path="/projects/:id" element={<ProjectDetail isAuthenticated />} />
         <Route path="/tasks" element={<TasksGrid isAuthenticated />} />
         <Route path="/tasks/filter" element={<FilterView isAuthenticated />} />
         <Route path="/tasks/new" element={<CreateTask isAuthenticated />} />
         <Route path="/tasks/:id/edit" element={<EditTask isAuthenticated />} />
+        <Route path="/tasks/:id" element={<TaskDetail isAuthenticated />} />
         <Route path="/categories/new" element={<CreateCategory isAuthenticated />} />
         <Route path="/more" element={<More isAuthenticated />} />
         <Route path="/profile" element={<Profile isAuthenticated />} />

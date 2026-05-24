@@ -4,7 +4,9 @@ import TasksToolbar from './TasksToolbar';
 import ActiveTaskFilters from './ActiveTaskFilters';
 import { useTasksContext } from '../../context/TasksContext';
 import TasksTable from './TasksTable';
+import TasksKanban from './TasksKanban';
 import { buildTaskHierarchy, formatDateOnly } from './taskUtils';
+import { LayoutGrid, Table2 } from 'lucide-react';
 import { API_URL, fetchWithAuth } from '../../api/authFetch';
 import TasksHeader from './TasksHeader';
 import {
@@ -68,6 +70,10 @@ function TasksGrid({ isAuthenticated }) {
   const [dateTo, setDateTo] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedNotesTaskId, setExpandedNotesTaskId] = useState(null);
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'kanban'
+  const [taskStatuses, setTaskStatuses] = useState([]);
+  const [projectsList, setProjectsList] = useState([]);
+  const [projectFilter, setProjectFilter] = useState(''); // '' = wszystkie
   const saveSettingsTimeoutRef = useRef(null);
 
   // Refs for context functions - initialized with null, will be set in useEffect
@@ -112,6 +118,10 @@ function TasksGrid({ isAuthenticated }) {
 
       if (searchQuery.trim()) {
         url += `&q=${encodeURIComponent(searchQuery.trim())}`;
+      }
+
+      if (projectFilter) {
+        url += `&project_id=${projectFilter}`;
       }
 
       const response = await fetchWithAuth(url);
@@ -179,6 +189,21 @@ function TasksGrid({ isAuthenticated }) {
     }
   }, [isAuthenticated]);
 
+  // Załaduj statusy zadań (kolumny kanban) i projekty (filtr)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_URL}/api/task-statuses`);
+        if (res.ok) setTaskStatuses(await res.json());
+        const pRes = await fetchWithAuth(`${API_URL}/api/projects`);
+        if (pRes.ok) setProjectsList(await pRes.json());
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [isAuthenticated]);
+
   // Load categories when filters are active (to display category names)
   useEffect(() => {
     if (isAuthenticated && (selectedCategoryFilters.length > 0 || noCategories)) {
@@ -206,7 +231,7 @@ function TasksGrid({ isAuthenticated }) {
       fetchTasks();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategoryFilters, statusFilter, noCategories, dateFrom, dateTo, searchQuery, isAuthenticated, settingsLoaded]);
+  }, [selectedCategoryFilters, statusFilter, noCategories, dateFrom, dateTo, searchQuery, projectFilter, isAuthenticated, settingsLoaded]);
 
   // ✅ Odświeżaj dane przy powrocie do widoku (np. z EditTask, CreateTask)
   useEffect(() => {
@@ -455,6 +480,45 @@ function TasksGrid({ isAuthenticated }) {
   };
 
 
+
+  // Przeniesienie zadania między kolumnami kanban (optimistic + optimistic locking)
+  const moveTaskStatus = async (task, status) => {
+    const prevTasks = tasks;
+    // Optymistyczna aktualizacja lokalna
+    setTasks((ts) =>
+      ts.map((t) =>
+        t.id === task.id
+          ? { ...t, status_id: status.id, status, completed: !!status.is_terminal }
+          : t
+      )
+    );
+    setError('');
+    try {
+      const response = await fetchWithAuth(`${API_URL}/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status_id: status.id, expected_version: task.version }),
+      });
+
+      if (response.status === 409) {
+        const errData = await response.json().catch(() => ({}));
+        setError(errData.message || 'Konflikt edycji — odświeżono dane.');
+        await fetchTasks();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error('Nie udało się zmienić statusu zadania');
+      }
+      const updated = await response.json();
+      // Zsynchronizuj wersję, by kolejne przeciągnięcia nie powodowały 409
+      setTasks((ts) =>
+        ts.map((t) => (t.id === task.id ? { ...t, version: updated.version ?? t.version } : t))
+      );
+    } catch (err) {
+      setTasks(prevTasks); // revert
+      setError(err.message || 'Nie udało się zmienić statusu zadania');
+    }
+  };
 
   const handleEdit = (task) => {
     navigate(`/tasks/${task.id}/edit`);
@@ -846,17 +910,73 @@ function TasksGrid({ isAuthenticated }) {
         categories={categories}
       />
 
-      <TasksTable
-        hierarchicalTasks={hierarchicalTasks}
-        visibleColumns={visibleColumns}
-        formatDateOnly={formatDateOnly}
-        expandedNotesTaskId={expandedNotesTaskId}
-        setExpandedNotesTaskId={setExpandedNotesTaskId}
-        toggleComplete={toggleComplete}
-        navigate={navigate}
-        handleEdit={handleEdit}
-        handleDeleteTask={handleDeleteTask}
-      />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="font-medium text-slate-600 dark:text-slate-300">Projekt:</span>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          >
+            <option value="">Wszystkie projekty</option>
+            {projectsList.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              viewMode === 'table'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Table2 className="h-4 w-4" />
+            Tabela
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('kanban')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              viewMode === 'kanban'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+            Kanban
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'kanban' ? (
+        <TasksKanban
+          tasks={tasks}
+          statuses={taskStatuses}
+          onMove={moveTaskStatus}
+          navigate={navigate}
+          handleEdit={handleEdit}
+          handleDeleteTask={handleDeleteTask}
+        />
+      ) : (
+        <TasksTable
+          hierarchicalTasks={hierarchicalTasks}
+          visibleColumns={visibleColumns}
+          formatDateOnly={formatDateOnly}
+          expandedNotesTaskId={expandedNotesTaskId}
+          setExpandedNotesTaskId={setExpandedNotesTaskId}
+          toggleComplete={toggleComplete}
+          navigate={navigate}
+          handleEdit={handleEdit}
+          handleDeleteTask={handleDeleteTask}
+        />
+      )}
     </div>
   );
 }

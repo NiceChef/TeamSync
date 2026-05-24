@@ -29,12 +29,14 @@ function EditTask({ isAuthenticated }) {
     priority: 'medium',
     assignee_user_id: '',
     group_id: '',
+    project_id: '',
     version: 1,
   });
 
   const [taskStatuses, setTaskStatuses] = useState([]);
   const [assignUsers, setAssignUsers] = useState([]);
   const [groupsList, setGroupsList] = useState([]);
+  const [projectsList, setProjectsList] = useState([]);
   const [comments, setComments] = useState([]);
   const [activities, setActivities] = useState([]);
   const [attachments, setAttachments] = useState([]);
@@ -234,6 +236,7 @@ function EditTask({ isAuthenticated }) {
         assignee_user_id:
           taskData.assignee_user_id != null ? taskData.assignee_user_id : '',
         group_id: taskData.group_id != null ? taskData.group_id : '',
+        project_id: taskData.project_id != null ? taskData.project_id : '',
         version: taskData.version ?? 1,
       });
     } catch (err) {
@@ -284,6 +287,8 @@ function EditTask({ isAuthenticated }) {
     (async () => {
       const stRes = await fetchWithAuth(`${API_URL}/api/task-statuses`);
       if (stRes.ok) setTaskStatuses(await stRes.json());
+      const pRes = await fetchWithAuth(`${API_URL}/api/projects`);
+      if (pRes.ok) setProjectsList(await pRes.json());
       const meRes = await fetchWithAuth(`${API_URL}/api/auth/me`);
       if (!meRes.ok) return;
       const me = await meRes.json();
@@ -379,6 +384,12 @@ function EditTask({ isAuthenticated }) {
         taskData.group_id = null;
       } else {
         taskData.group_id = Number(editingTask.group_id);
+      }
+
+      if (editingTask.project_id === '' || editingTask.project_id == null) {
+        taskData.project_id = null;
+      } else {
+        taskData.project_id = Number(editingTask.project_id);
       }
 
       const response = await fetchWithAuth(`${API_URL}/api/tasks/${editingTask.id}`, {
@@ -977,6 +988,27 @@ function EditTask({ isAuthenticated }) {
                   <option value="low">Niski</option>
                   <option value="medium">Średni</option>
                   <option value="high">Wysoki</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: '1', minWidth: '160px' }}>
+                <label htmlFor="edit-project">Projekt</label>
+                <select
+                  id="edit-project"
+                  value={editingTask.project_id === '' ? '' : String(editingTask.project_id)}
+                  onChange={(e) =>
+                    setEditingTask((p) => ({
+                      ...p,
+                      project_id: e.target.value === '' ? '' : Number(e.target.value),
+                    }))
+                  }
+                  disabled={submitting}
+                >
+                  <option value="">—</option>
+                  {projectsList.map((proj) => (
+                    <option key={proj.id} value={proj.id}>
+                      {proj.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               {meUser && meUser.role !== 'client' && (

@@ -50,6 +50,8 @@ def ensure_sqlite_schema(engine) -> None:
             _sqlite_add_column(engine, 'tasks', 'assignee_user_id INTEGER')
         if 'group_id' not in tcols:
             _sqlite_add_column(engine, 'tasks', 'group_id INTEGER')
+        if 'project_id' not in tcols:
+            _sqlite_add_column(engine, 'tasks', 'project_id INTEGER')
         if 'updated_at' not in tcols:
             _sqlite_add_column(engine, 'tasks', 'updated_at DATETIME')
 
@@ -83,6 +85,7 @@ def ensure_postgres_schema(engine) -> None:
         ('tasks', 'version', 'INTEGER NOT NULL DEFAULT 1'),
         ('tasks', 'assignee_user_id', 'INTEGER'),
         ('tasks', 'group_id', 'INTEGER'),
+        ('tasks', 'project_id', 'INTEGER'),
         ('tasks', 'updated_at', 'TIMESTAMP WITH TIME ZONE'),
     ]
 
