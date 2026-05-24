@@ -48,6 +48,8 @@ import {
     updateEvent,
     deleteEvent,
     fetchTasksWithDeadline,
+    updateTaskDeadline,
+    toDateOnly,
 } from './eventUtils';
 import { API_URL, fetchWithAuth } from '../../api/authFetch';
 
@@ -211,13 +213,17 @@ function cx(...parts) {
     return parts.filter(Boolean).join(' ');
 }
 
-function setDragData(e, eventId) {
+// Dane przeciągania kodują typ, by odróżnić wydarzenie od zadania: "event:12" / "task:34".
+function setDragData(e, kind, id) {
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(eventId));
+    e.dataTransfer.setData('text/plain', `${kind}:${id}`);
 }
 
 function getDragData(e) {
-    return e.dataTransfer.getData('text/plain');
+    const raw = e.dataTransfer.getData('text/plain');
+    const idx = raw.indexOf(':');
+    if (idx === -1) return { kind: 'event', id: raw };
+    return { kind: raw.slice(0, idx), id: raw.slice(idx + 1) };
 }
 
 // ─── Popover ze szczegółami wydarzenia ───────────────────────────────────
@@ -319,6 +325,7 @@ function MonthView({
     onSelectDay,
     onCreateAt,
     onDropEvent,
+    onDropTask,
     selectedEvent,
     onSelectEvent,
     onSelectTask,
@@ -390,8 +397,10 @@ function MonthView({
                             onDragOver={handleDragOver}
                             onDrop={(e) => {
                                 e.preventDefault();
-                                const eventId = getDragData(e);
-                                if (eventId) onDropEvent(eventId, day);
+                                const { kind, id } = getDragData(e);
+                                if (!id) return;
+                                if (kind === 'task') onDropTask(id, day);
+                                else onDropEvent(id, day);
                             }}
                         >
                             <div className="flex items-center justify-between">
@@ -428,12 +437,17 @@ function MonthView({
                                     <button
                                         key={`task-${t.id}`}
                                         type="button"
+                                        draggable
+                                        onDragStart={(e) => {
+                                            e.stopPropagation();
+                                            setDragData(e, 'task', t.id);
+                                        }}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             onSelectTask(t.id);
                                         }}
-                                        title={`Zadanie: ${t.topic}`}
-                                        className="flex w-full items-center gap-1 rounded border border-dashed border-slate-300 bg-slate-50 px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-slate-600 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                        title={`Zadanie: ${t.topic} — przeciągnij, aby zmienić termin`}
+                                        className="flex w-full cursor-grab items-center gap-1 rounded border border-dashed border-slate-300 bg-slate-50 px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-slate-600 transition hover:border-indigo-400 hover:text-indigo-600 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                                     >
                                         <CheckSquare className="h-2.5 w-2.5 shrink-0 opacity-60" />
                                         <span className="truncate">{t.topic}</span>
@@ -444,7 +458,7 @@ function MonthView({
                                         key={ev.id}
                                         type="button"
                                         draggable
-                                        onDragStart={(e) => setDragData(e, ev.id)}
+                                        onDragStart={(e) => setDragData(e, 'event', ev.id)}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
@@ -563,10 +577,10 @@ function WeekView({
                                     onDragOver={handleDragOver}
                                     onDrop={(e) => {
                                         e.preventDefault();
-                                        const eventId = getDragData(e);
-                                        if (eventId) {
+                                        const { kind, id } = getDragData(e);
+                                        if (id && kind === 'event') {
                                             const target = setHours(setMinutes(day, 0), hour);
-                                            onDropEvent(eventId, target);
+                                            onDropEvent(id, target);
                                         }
                                     }}
                                 >
@@ -582,7 +596,7 @@ function WeekView({
                                                 key={ev.id}
                                                 type="button"
                                                 draggable
-                                                onDragStart={(e) => setDragData(e, ev.id)}
+                                                onDragStart={(e) => setDragData(e, 'event', ev.id)}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
@@ -668,10 +682,10 @@ function DayView({
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => {
                                     e.preventDefault();
-                                    const eventId = getDragData(e);
-                                    if (eventId) {
+                                    const { kind, id } = getDragData(e);
+                                    if (id && kind === 'event') {
                                         const target = setHours(setMinutes(currentDate, 0), hour);
-                                        onDropEvent(eventId, target);
+                                        onDropEvent(id, target);
                                     }
                                 }}
                             >
@@ -687,7 +701,7 @@ function DayView({
                                             key={ev.id}
                                             type="button"
                                             draggable
-                                            onDragStart={(e) => setDragData(e, ev.id)}
+                                            onDragStart={(e) => setDragData(e, 'event', ev.id)}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
@@ -876,6 +890,45 @@ export default function CalendarView({ isAuthenticated }) {
         [],
     );
 
+    const handleDropTask = useCallback(
+        (taskId, targetDate) => {
+            const task = tasks.find((t) => String(t.id) === String(taskId));
+            if (!task) return;
+
+            const newDeadline = toDateOnly(targetDate);
+            if (task.deadline === newDeadline) return;
+
+            // Optymistyczna aktualizacja UI.
+            const previous = tasks;
+            setTasks((curr) =>
+                curr.map((t) =>
+                    String(t.id) === String(taskId) ? { ...t, deadline: newDeadline } : t,
+                ),
+            );
+
+            updateTaskDeadline(taskId, {
+                deadline: newDeadline,
+                expected_version: task.version,
+            })
+                .then((updated) => {
+                    setTasks((curr) =>
+                        curr.map((t) => (String(t.id) === String(updated.id) ? updated : t)),
+                    );
+                })
+                .catch((err) => {
+                    // Konflikt wersji (409) lub błąd → cofnij i odśwież z serwera.
+                    setTasks(previous);
+                    if (err.code === 409) {
+                        setError('Zadanie zmieniło się w międzyczasie — odświeżono dane.');
+                    } else {
+                        setError(err.message || 'Nie udało się przenieść zadania.');
+                    }
+                    loadTasks();
+                });
+        },
+        [tasks, loadTasks],
+    );
+
     const handleSelectTask = useCallback((taskId) => navigate(`/tasks/${taskId}`), [navigate]);
 
     const navigateBack = useCallback(() => {
@@ -1044,6 +1097,7 @@ export default function CalendarView({ isAuthenticated }) {
                             onSelectDay={handleSelectDay}
                             onCreateAt={openCreate}
                             onDropEvent={handleDropEvent}
+                            onDropTask={handleDropTask}
                             selectedEvent={selectedEvent}
                             onSelectEvent={setSelectedEvent}
                             onSelectTask={handleSelectTask}

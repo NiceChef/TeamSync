@@ -215,12 +215,38 @@ export async function deleteEvent(id) {
     return res.json();
 }
 
-// Zadania z terminem (deadline) do nakładki na kalendarzu (read-only).
+// Zadania z terminem (deadline) do nakładki na kalendarzu.
 export async function fetchTasksWithDeadline() {
     const res = await fetchWithAuth(`${API_URL}/api/tasks`);
     if (!res.ok) return [];
     const data = await res.json();
     return (Array.isArray(data) ? data : []).filter((t) => t.deadline);
+}
+
+// Aktualizacja terminu zadania (DnD na kalendarzu). Termin to wyłącznie data.
+export async function updateTaskDeadline(id, payload) {
+    const res = await fetchWithAuth(`${API_URL}/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (res.status === 409) {
+        const conflict = new Error('conflict');
+        conflict.code = 409;
+        throw conflict;
+    }
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || data.message || 'Nie udało się zaktualizować zadania.');
+    }
+    return res.json();
+}
+
+// Date -> 'YYYY-MM-DD' wg czasu lokalnego (zgodnie z dniem widocznym w siatce).
+export function toDateOnly(date) {
+    const d = new Date(date);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // Konwersja Date -> wartość dla <input type="datetime-local"> (czas lokalny).
