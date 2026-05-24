@@ -1,0 +1,1 @@
+export { mockEvents } from "@/mockData";

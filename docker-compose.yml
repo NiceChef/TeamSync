@@ -1,0 +1,25 @@
+# PostgreSQL dla projektu (development). Backend łączy się z localhost:5432.
+#
+# Uruchomienie:
+#   docker compose up -d
+#
+# Credentiale zgodne z backend/.env_development (POSTGRES_* = fragment URI).
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tasks-postgres-dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - tasks_pg_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasks_dev -d tasks_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tasks_pg_dev_data:
