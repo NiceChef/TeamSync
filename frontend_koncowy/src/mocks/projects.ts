@@ -1,1 +1,0 @@
-export { mockProjects } from "@/mockData";
