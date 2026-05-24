@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout.jsx';
 import Login from './components/Login';
@@ -14,6 +14,8 @@ import Groups from './components/Groups';
 import Dashboard from './components/dashboard/Dashboard.jsx';
 import ProjectsList from './components/projects/ProjectsList.jsx';
 import ProjectDetail from './components/projects/ProjectDetail.jsx';
+// Leniwie — recharts trafia do osobnego chunku zamiast głównego bundla.
+const Reports = lazy(() => import('./components/reports/Reports.jsx'));
 import { TasksProvider } from './context/TasksContext';
 import { TaskDrawerProvider } from './context/TaskDrawerContext';
 
@@ -41,6 +43,14 @@ function AuthenticatedApp({ user, handleLogout }) {
         <Route path="/profile" element={<Profile isAuthenticated />} />
         <Route path="/groups" element={<Groups isAuthenticated />} />
         <Route path="/calendar" element={<CalendarView isAuthenticated />} />
+        <Route
+          path="/reports"
+          element={
+            <Suspense fallback={<div className="p-8 text-sm text-slate-500 dark:text-slate-400">Ładowanie raportów…</div>}>
+              <Reports isAuthenticated />
+            </Suspense>
+          }
+        />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

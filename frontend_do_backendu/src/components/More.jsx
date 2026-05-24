@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  BarChart3,
   Bell,
   Check,
   Columns3,
   Download,
   FileJson,
   FileSpreadsheet,
-  FolderKanban,
   RefreshCw,
   Settings,
   Tags,
@@ -23,9 +23,6 @@ function More({ isAuthenticated }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [reportTasks, setReportTasks] = useState('');
-  const [reportActivity, setReportActivity] = useState('');
-  const [reportProject, setReportProject] = useState('');
   const [notifications, setNotifications] = useState([]);
 
   const getAuthToken = () => localStorage.getItem('access_token');
@@ -126,33 +123,6 @@ function More({ isAuthenticated }) {
     }
   }, [isAuthenticated]);
 
-  const fetchReportTasks = async () => {
-    try {
-      const r = await fetchWithAuth(`${API_URL}/api/reports/tasks-summary`);
-      setReportTasks(r.ok ? await r.text() : 'Błąd pobierania');
-    } catch {
-      setReportTasks('Błąd sieci');
-    }
-  };
-
-  const fetchReportActivity = async () => {
-    try {
-      const r = await fetchWithAuth(`${API_URL}/api/reports/user-activity`);
-      setReportActivity(r.ok ? await r.text() : 'Błąd pobierania');
-    } catch {
-      setReportActivity('Błąd sieci');
-    }
-  };
-
-  const fetchReportProject = async () => {
-    try {
-      const r = await fetchWithAuth(`${API_URL}/api/reports/project-progress`);
-      setReportProject(r.ok ? await r.text() : 'Błąd pobierania');
-    } catch {
-      setReportProject('Błąd sieci');
-    }
-  };
-
   const markNotificationRead = async (nid) => {
     try {
       await fetchWithAuth(`${API_URL}/api/notifications/${nid}/read`, { method: 'POST' });
@@ -243,55 +213,24 @@ function More({ isAuthenticated }) {
 
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-4 flex items-center gap-2">
-              <FolderKanban className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
+              <BarChart3 className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
               <h3 className="font-semibold text-slate-900 dark:text-slate-100">
                 Raporty
               </h3>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={fetchReportTasks}
-                className="rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:shadow-md"
-              >
-                Raport zadań
-              </button>
+            <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+              Postęp zadań, grup i aktywność zespołu w formie wykresów.
+            </p>
 
-              <button
-                type="button"
-                onClick={fetchReportProject}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                Postęp wg grup
-              </button>
-
-              <button
-                type="button"
-                onClick={fetchReportActivity}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                Aktywność użytkowników
-              </button>
-            </div>
-
-            {reportTasks && (
-              <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                {reportTasks}
-              </pre>
-            )}
-
-            {reportProject && (
-              <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                {reportProject}
-              </pre>
-            )}
-
-            {reportActivity && (
-              <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                {reportActivity}
-              </pre>
-            )}
+            <button
+              type="button"
+              onClick={() => navigate('/reports')}
+              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:shadow-md"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Otwórz raporty
+            </button>
           </section>
         </div>
 
