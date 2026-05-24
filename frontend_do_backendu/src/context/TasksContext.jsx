@@ -1,8 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-
-const TasksContext = createContext(null);
-
-export const useTasksContext = () => useContext(TasksContext);
+import { useState, useCallback, useMemo } from 'react';
+import { TasksContext } from './tasks-context';
 
 export const TasksProvider = ({ children }) => {
   const [contextValue, setContextValue] = useState(null);

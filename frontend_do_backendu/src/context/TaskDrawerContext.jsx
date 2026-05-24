@@ -1,12 +1,9 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import Drawer from '../components/ui/Drawer';
 import CreateTask from '../components/tasks/CreateTask';
 import EditTask from '../components/EditTask';
-import { useTasksContext } from './TasksContext';
-
-const TaskDrawerContext = createContext(null);
-
-export const useTaskDrawer = () => useContext(TaskDrawerContext) || {};
+import { useTasksContext } from './tasks-context';
+import { TaskDrawerContext } from './task-drawer-context';
 
 const EMPTY = { mode: null, taskId: null, parentId: null };
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { taskRowClassName } from './taskUtils';
-import { useTaskDrawer } from '../../context/TaskDrawerContext';
+import { useTaskDrawer } from '../../context/task-drawer-context';
 
 export default function TaskRow({
     task,

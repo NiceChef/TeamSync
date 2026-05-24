@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { KeyRound, Mail, Phone, Save, Shield, UserRound } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -28,7 +28,7 @@ export default function Profile({ isAuthenticated }) {
 
   const token = () => localStorage.getItem('access_token');
 
-  const fetchMe = async () => {
+  const fetchMe = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -50,11 +50,11 @@ export default function Profile({ isAuthenticated }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) fetchMe();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchMe]);
 
   const saveProfile = async (e) => {
     e.preventDefault();

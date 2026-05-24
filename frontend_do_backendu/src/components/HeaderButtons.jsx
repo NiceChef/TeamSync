@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useTasksContext } from '../context/TasksContext';
-import { useTaskDrawer } from '../context/TaskDrawerContext';
+import { useTasksContext } from '../context/tasks-context';
+import { useTaskDrawer } from '../context/task-drawer-context';
 
 const btnPrimary =
   'inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg px-4 text-sm font-semibold text-white shadow transition hover:-translate-y-px hover:shadow-md';

@@ -15,9 +15,10 @@ const EMPTY = { tasks: [], projects: [], users: [], groups: [] };
 export default function GlobalSearch() {
     const navigate = useNavigate();
     const [query, setQuery] = useState('');
-    const [results, setResults] = useState(EMPTY);
+    // Trzymamy wyniki razem z zapytaniem, dla którego powstały — dzięki temu
+    // „loading" i czyszczenie wyliczamy podczas renderu zamiast setState w efekcie.
+    const [results, setResults] = useState({ q: '', data: EMPTY });
     const [open, setOpen] = useState(false);
-    const [loading, setLoading] = useState(false);
     const containerRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -50,25 +51,23 @@ export default function GlobalSearch() {
 
     useEffect(() => {
         const q = query.trim();
-        if (!q) {
-            setResults(EMPTY);
-            setLoading(false);
-            return undefined;
-        }
-        setLoading(true);
+        if (!q) return undefined;
         const handle = setTimeout(async () => {
             const data = await globalSearch(q);
-            setResults(data);
-            setLoading(false);
+            setResults({ q, data });
         }, 250);
         return () => clearTimeout(handle);
     }, [query]);
 
+    const q = query.trim();
+    const fresh = results.q === q;
+    const data = fresh ? results.data : EMPTY;
+    const loading = Boolean(q) && !fresh;
     const total =
-        results.tasks.length +
-        results.projects.length +
-        results.users.length +
-        results.groups.length;
+        data.tasks.length +
+        data.projects.length +
+        data.users.length +
+        data.groups.length;
 
     const go = useCallback(
         (path) => {
@@ -167,7 +166,7 @@ export default function GlobalSearch() {
                         </p>
                     ) : (
                         GROUPS.map(({ key, label, icon: Icon }) => {
-                            const items = results[key];
+                            const items = data[key];
                             if (!items.length) return null;
                             return (
                                 <div key={key} className="border-b border-slate-100 py-1 last:border-0 dark:border-slate-800">

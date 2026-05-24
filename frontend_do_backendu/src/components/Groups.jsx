@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Building2, Plus, Search, ShieldAlert, UserPlus, Users } from 'lucide-react';
 import { isClient, canManage } from '../constants/roles';
-import { useMe } from '../context/AuthContext';
+import { useMe } from '../context/auth-context';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -19,7 +19,7 @@ export default function Groups({ isAuthenticated }) {
 
   const token = () => localStorage.getItem('access_token');
 
-  const loadGroups = async () => {
+  const loadGroups = useCallback(async () => {
     setError('');
     try {
       const url = q.trim()
@@ -32,11 +32,11 @@ export default function Groups({ isAuthenticated }) {
     } catch (e) {
       setError(e.message);
     }
-  };
+  }, [q]);
 
   useEffect(() => {
     if (isAuthenticated && canManage(me)) loadGroups();
-  }, [isAuthenticated, me, q]);
+  }, [isAuthenticated, me, loadGroups]);
 
   const createGroup = async (e) => {
     e.preventDefault();

@@ -142,24 +142,6 @@ function CreateTask({ isAuthenticated, drawer = false, parentId = null, onClose,
   const getAvailableSubtasks = () => {
     if (!tasks || tasks.length === 0) return [];
 
-    // Funkcja pomocnicza do sprawdzania cykli
-    const wouldCreateCycle = (targetId, currentId, visited = new Set()) => {
-      if (visited.has(targetId)) return true;
-      if (targetId === currentId) return true;
-
-      visited.add(targetId);
-      const targetTask = tasks.find(t => t.id === targetId);
-      if (!targetTask || !targetTask.related_tasks) return false;
-
-      const outgoing = targetTask.related_tasks.outgoing || [];
-      for (const rel of outgoing) {
-        if (wouldCreateCycle(rel.target_task_id, currentId, visited)) {
-          return true;
-        }
-      }
-      return false;
-    };
-
     // Funkcja pomocnicza do pobierania wszystkich parent tasków (rekurencyjnie)
     const getAllParentIds = (taskId, visited = new Set()) => {
       if (visited.has(taskId)) return visited;

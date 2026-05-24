@@ -1,19 +1,12 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { API_URL, fetchWithAuth } from '../api/authFetch';
-
-const AuthContext = createContext(null);
-
-// Zwraca zalogowanego użytkownika (lub null). Pobierany raz, współdzielony przez widoki.
-export const useMe = () => useContext(AuthContext);
+import { AuthContext } from './auth-context';
 
 export function AuthProvider({ isAuthenticated, children }) {
     const [me, setMe] = useState(null);
 
     useEffect(() => {
-        if (!isAuthenticated) {
-            setMe(null);
-            return undefined;
-        }
+        if (!isAuthenticated) return undefined;
         let active = true;
         (async () => {
             try {
@@ -23,8 +16,11 @@ export function AuthProvider({ isAuthenticated, children }) {
                 /* brak profilu nie blokuje UI */
             }
         })();
+        // Reset robimy w cleanupie (przy wylogowaniu / odmontowaniu), nie synchronicznie
+        // w ciele efektu — to zapobiega kaskadowym re-renderom.
         return () => {
             active = false;
+            setMe(null);
         };
     }, [isAuthenticated]);
 

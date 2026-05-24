@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import Button from './ui/Button';
@@ -21,7 +21,10 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
   const navigate = useNavigate();
 
   // W trybie drawer zamykanie/zapis idą przez callbacki zamiast nawigacji.
-  const closeView = () => (onClose ? onClose() : navigate('/tasks'));
+  const closeView = useCallback(
+    () => (onClose ? onClose() : navigate('/tasks')),
+    [onClose, navigate],
+  );
   const finishSaved = (savedId) =>
     onSaved ? onSaved(savedId) : navigate('/tasks', { state: { scrollToTaskId: savedId } });
   const [task, setTask] = useState(null);
@@ -60,7 +63,7 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
 
 
   // Pobierz taska
-  const fetchTask = async () => {
+  const fetchTask = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -117,10 +120,10 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, closeView, navigate]);
 
   // Pobierz wszystkie taski (dla subtasków)
-  const fetchAllTasks = async () => {
+  const fetchAllTasks = useCallback(async () => {
     try {
       const response = await fetchWithAuth(`${API_URL}/api/tasks?include_relations=true`);
       if (response.ok) {
@@ -130,10 +133,10 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
     }
-  };
+  }, []);
 
   // Pobierz kategorie
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await fetchWithAuth(`${API_URL}/api/categories`);
       if (!response.ok) {
@@ -145,7 +148,7 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
     } catch (err) {
       console.error('Failed to fetch categories:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated && id) {
@@ -153,7 +156,7 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
       fetchAllTasks();
       fetchCategories();
     }
-  }, [id, isAuthenticated]);
+  }, [id, isAuthenticated, fetchTask, fetchAllTasks, fetchCategories]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

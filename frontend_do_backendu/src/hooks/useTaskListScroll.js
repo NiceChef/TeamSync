@@ -29,7 +29,7 @@ export function useTaskListScroll({ location, navigate, loading, hierarchicalTas
 
             navigate(location.pathname, { replace: true, state: {} });
         }
-    }, [hierarchicalTasks, loading, location.state, navigate]);
+    }, [hierarchicalTasks, loading, location.state, location.pathname, navigate]);
 
     useEffect(() => {
         if (location.pathname === '/tasks' && !loading && hierarchicalTasks.length > 0) {

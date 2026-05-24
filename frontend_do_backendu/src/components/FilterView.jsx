@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTasksContext } from '../context/TasksContext';
+import { useTasksContext } from '../context/tasks-context';
 import { API_URL, fetchWithAuth } from '../api/authFetch';
 
 function FilterView({ isAuthenticated }) {
@@ -12,7 +12,10 @@ function FilterView({ isAuthenticated }) {
   const [error, setError] = useState('');
 
   // Get filter state from context
-  const selectedCategoryFilters = tasksContext?.selectedCategoryFilters || [];
+  const selectedCategoryFilters = useMemo(
+    () => tasksContext?.selectedCategoryFilters || [],
+    [tasksContext?.selectedCategoryFilters],
+  );
   const statusFilter = tasksContext?.statusFilter || 'all';
   const noCategories = tasksContext?.noCategories || false;
   const setSelectedCategoryFilters = tasksContext?.setSelectedCategoryFilters;

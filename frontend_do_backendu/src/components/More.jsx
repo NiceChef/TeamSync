@@ -13,7 +13,7 @@ import {
   Tags,
   Upload,
 } from 'lucide-react';
-import { useTasksContext } from '../context/TasksContext';
+import { useTasksContext } from '../context/tasks-context';
 import { API_URL, fetchWithAuth } from '../api/authFetch';
 
 function More({ isAuthenticated }) {

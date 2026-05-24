@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import TasksToolbar from './TasksToolbar';
 import ActiveTaskFilters from './ActiveTaskFilters';
-import { useTasksContext } from '../../context/TasksContext';
-import { useTaskDrawer } from '../../context/TaskDrawerContext';
+import { useTasksContext } from '../../context/tasks-context';
+import { useTaskDrawer } from '../../context/task-drawer-context';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useTaskListScroll } from '../../hooks/useTaskListScroll';
 import TasksTable from './TasksTable';
@@ -44,7 +44,10 @@ function TasksGrid({ isAuthenticated }) {
   const [submitting, setSubmitting] = useState(false);
   const [categories, setCategories] = useState([]);
   // Filters are now managed via context and FilterView component
-  const selectedCategoryFilters = tasksContext?.selectedCategoryFilters || [];
+  const selectedCategoryFilters = useMemo(
+    () => tasksContext?.selectedCategoryFilters || [],
+    [tasksContext?.selectedCategoryFilters],
+  );
   const statusFilter = tasksContext?.statusFilter || 'all';
   const noCategories = tasksContext?.noCategories || false;
 

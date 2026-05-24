@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderKanban, Plus, Search, X } from 'lucide-react';
 import { listProjects, createProject } from '../../api/projects';
-import { useMe } from '../../context/AuthContext';
+import { useMe } from '../../context/auth-context';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { PROJECT_STATUSES, statusMeta, initials } from './projectUtils';

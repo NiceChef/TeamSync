@@ -60,19 +60,17 @@ function AuthenticatedApp({ user, handleLogout }) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
-
-  useEffect(() => {
+  // Odczyt sesji z localStorage robimy w inicjalizatorze useState, nie w efekcie —
+  // dzięki temu nie ma kaskadowego re-renderu zaraz po montażu.
+  const [user, setUser] = useState(() => {
     const storedUser = localStorage.getItem('user');
     const storedToken = localStorage.getItem('access_token');
-
-    if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
-      setIsAuthenticated(true);
-    }
-  }, []);
+    return storedUser && storedToken ? JSON.parse(storedUser) : null;
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => Boolean(localStorage.getItem('user') && localStorage.getItem('access_token')),
+  );
+  const [showRegister, setShowRegister] = useState(false);
 
   const handleLogin = (userData) => {
     const savedToken = localStorage.getItem('access_token');

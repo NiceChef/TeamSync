@@ -31,7 +31,7 @@ import {
     listRelations,
 } from '../../api/tasks';
 import { getProject } from '../../api/projects';
-import { useTaskDrawer } from '../../context/TaskDrawerContext';
+import { useTaskDrawer } from '../../context/task-drawer-context';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { priorityMeta } from '../../constants/priorities';

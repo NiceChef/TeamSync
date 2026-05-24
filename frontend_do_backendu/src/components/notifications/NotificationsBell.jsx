@@ -50,9 +50,22 @@ export default function NotificationsBell() {
     }, []);
 
     useEffect(() => {
-        load();
+        let active = true;
+        // Pierwsze pobranie jako async IIFE — setState dzieje się dopiero po await,
+        // więc nie jest to synchroniczny re-render w ciele efektu.
+        (async () => {
+            try {
+                const next = await listNotifications();
+                if (active) setItems((prev) => (sameNotifications(prev, next) ? prev : next));
+            } catch {
+                /* cicho — powiadomienia są nieblokujące */
+            }
+        })();
         const interval = setInterval(load, 60000);
-        return () => clearInterval(interval);
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
     }, [load]);
 
     useEffect(() => {

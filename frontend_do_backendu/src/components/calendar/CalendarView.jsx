@@ -52,7 +52,7 @@ import {
     toDateOnly,
 } from './eventUtils';
 import { canManage as userCanManage } from '../../constants/roles';
-import { useMe } from '../../context/AuthContext';
+import { useMe } from '../../context/auth-context';
 
 const EVENT_TYPES = [
     { value: 'meeting', label: 'Spotkanie' },
@@ -515,15 +515,19 @@ function WeekView({
     const weekEnd = endOfWeek(currentDate);
     const hours = getHourSlots();
 
+    // Stabilne prymitywy do listy zależności — daty to nowe obiekty przy każdym renderze.
+    const weekStartMs = weekStart.getTime();
+    const weekEndMs = weekEnd.getTime();
     const weekDays = useMemo(() => {
         const days = [];
-        let d = weekStart;
-        while (d <= weekEnd) {
+        let d = new Date(weekStartMs);
+        const end = new Date(weekEndMs);
+        while (d <= end) {
             days.push(d);
             d = addDays(d, 1);
         }
         return days;
-    }, [weekStart.getTime(), weekEnd.getTime()]);
+    }, [weekStartMs, weekEndMs]);
 
     // Indeks zdarzeń wg „dzień-godzina" — zamiast filtrować całą listę w każdej ze 168 komórek.
     const eventsByDayHour = useMemo(() => {

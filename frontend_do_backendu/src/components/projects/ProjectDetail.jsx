@@ -11,7 +11,7 @@ import {
     UserMinus,
     Users,
 } from 'lucide-react';
-import { useMe } from '../../context/AuthContext';
+import { useMe } from '../../context/auth-context';
 import {
     getProject,
     updateProject,
