@@ -40,6 +40,23 @@ const PRIORITY_META = {
     low: { label: 'Niski', variant: 'default' },
 };
 
+// Lustro walidacji backendu (config.MAX_UPLOAD_BYTES + whitelist w routes.upload_task_attachment).
+const MAX_UPLOAD_BYTES = 5_000_000;
+const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.txt', '.doc', '.docx', '.xlsx', '.csv'];
+
+function validateAttachment(file) {
+    const dot = file.name.lastIndexOf('.');
+    const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        return `Niedozwolony typ pliku. Dozwolone: ${ALLOWED_EXTENSIONS.join(', ')}.`;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+        const mb = (MAX_UPLOAD_BYTES / 1_000_000).toFixed(0);
+        return `Plik jest za duży (maks. ${mb} MB).`;
+    }
+    return null;
+}
+
 function formatDate(value) {
     if (!value) return '—';
     try {
@@ -246,6 +263,11 @@ export default function TaskDetail({ isAuthenticated }) {
         const file = e.target.files?.[0];
         e.target.value = '';
         if (!file) return;
+        const validationError = validateAttachment(file);
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
         setUploading(true);
         setError('');
         try {
@@ -438,10 +460,15 @@ export default function TaskDetail({ isAuthenticated }) {
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800">
                     <Paperclip className="h-4 w-4" />
                     {uploading ? 'Wysyłanie...' : 'Dodaj plik'}
-                    <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+                    <input type="file" className="hidden" accept={ALLOWED_EXTENSIONS.join(',')} onChange={handleUpload} disabled={uploading} />
                 </label>
+                <p className="mt-2 text-xs text-slate-400">
+                    Maks. {(MAX_UPLOAD_BYTES / 1_000_000).toFixed(0)} MB · {ALLOWED_EXTENSIONS.join(', ')}
+                </p>
 
-                {attachments.length > 0 && (
+                {attachments.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-400">Brak załączników.</p>
+                ) : (
                     <ul className="mt-3 space-y-2">
                         {attachments.map((at) => (
                             <li
