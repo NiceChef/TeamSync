@@ -10,7 +10,7 @@ Wymaga tylko Dockera. Z katalogu głównego:
 docker compose up -d --build
 ```
 
-Uruchamia trzy serwisy: `postgres` + `backend` (Flask) + `frontend` (Vite/`frontend_do_backendu`).
+Uruchamia trzy serwisy: `postgres` + `backend` (Flask) + `frontend` (Vite).
 
 | Usługa   | Domyślny URL          |
 |----------|-----------------------|

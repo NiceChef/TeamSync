@@ -1,18 +1,18 @@
 # TeamSync — Roadmapa realizacji projektu
 
 > Dokument do akceptacji zespołu. Stan na: **2026-05-24**.
-> Bazuje na analizie porównawczej: [`Specyfikacja funkcjonalnosci.md`](./Specyfikacja%20funkcjonalnosci.md) (karta funkcjonalności docelowego produktu), [`widoki-design-system.md`](./widoki-design-system.md) (opis dopracowanego UI), oraz faktycznego stanu kodu (`backend/`, `frontend_do_backendu/`, `frontend_koncowy/`).
+> Bazuje na analizie porównawczej: [`Specyfikacja funkcjonalnosci.md`](./Specyfikacja%20funkcjonalnosci.md) (karta funkcjonalności docelowego produktu), [`widoki-design-system.md`](./widoki-design-system.md) (opis dopracowanego UI), oraz faktycznego stanu kodu (`backend/`, `frontend/`, `frontend_koncowy/`).
 
 ---
 
 ## 1. Decyzje strategiczne (zatwierdzone)
 
-1. **Docelowy frontend: `frontend_do_backendu`** (React/JS, realnie podpięty pod Flask) — zostaje końcowym frontendem. `frontend_koncowy` (TS/shadcn, mockowany) traktujemy wyłącznie jako **źródło widoków i wzorców UX do przeniesienia**, nie jako kod produkcyjny.
-2. **Portujemy widoki z `frontend_koncowy` do `frontend_do_backendu`**, dopasowując je do **kolorystyki `frontend_do_backendu`** (paleta **slate**, Tailwind 3: `bg-slate-100/900/950`, karty `bg-white dark:bg-slate-900`, `border-slate-200`). Priorytetowo: **Dashboard** i **widok Kalendarza** (na pewno do przerobienia). NIE przenosimy tokenów OKLCH/shadcn ani Tailwind 4 — tylko układ, strukturę i komponenty.
-3. **Przenosimy koncepcję Projektów i Zadań** z `frontend_koncowy` do `frontend_do_backendu` (karty projektów z postępem/członkami, kanban zadań z priorytetem/assignee). Wymaga to rozszerzenia backendu o realne encje `Project` i `CalendarEvent` (kalendarz przestaje być wyłącznie projekcją terminów zadań).
+1. **Docelowy frontend: `frontend`** (React/JS, realnie podpięty pod Flask) — zostaje końcowym frontendem. `frontend_koncowy` (TS/shadcn, mockowany) traktujemy wyłącznie jako **źródło widoków i wzorców UX do przeniesienia**, nie jako kod produkcyjny.
+2. **Portujemy widoki z `frontend_koncowy` do `frontend`**, dopasowując je do **kolorystyki `frontend`** (paleta **slate**, Tailwind 3: `bg-slate-100/900/950`, karty `bg-white dark:bg-slate-900`, `border-slate-200`). Priorytetowo: **Dashboard** i **widok Kalendarza** (na pewno do przerobienia). NIE przenosimy tokenów OKLCH/shadcn ani Tailwind 4 — tylko układ, strukturę i komponenty.
+3. **Przenosimy koncepcję Projektów i Zadań** z `frontend_koncowy` do `frontend` (karty projektów z postępem/członkami, kanban zadań z priorytetem/assignee). Wymaga to rozszerzenia backendu o realne encje `Project` i `CalendarEvent` (kalendarz przestaje być wyłącznie projekcją terminów zadań).
 4. **Ten dokument to roadmapa** — nie zaczynamy implementacji przed akceptacją.
 
-### Macierz portowania (`frontend_koncowy` → `frontend_do_backendu`)
+### Macierz portowania (`frontend_koncowy` → `frontend`)
 
 | Widok źródłowy (koncowy) | Stan w do_backendu | Zakres portu | Zależność backend |
 |---|---|---|---|
@@ -34,7 +34,7 @@ Pełny zestaw endpointów i modeli, **bogatszy niż opisuje `widoki-design-syste
 - **Raporty:** tasks-summary, user-activity, project-progress (tekstowe).
 - **Ustawienia użytkownika** (`/user/settings`).
 
-### `frontend_do_backendu` — działa, surowy wizualnie
+### `frontend` — działa, surowy wizualnie
 Pokrywa: auth, CRUD zadań + filtry, kategorie, kalendarz (na bazie zadań), grupy, profil, dashboard, advanced filters. Warstwa `authFetch.js` obsługuje JWT + refresh.
 
 ### `frontend_koncowy` — referencja UX (nie produkcja)
@@ -44,7 +44,7 @@ Dopracowany design system (shadcn base-nova, tokeny OKLCH, wzorzec trójstanu). 
 
 ## 3. Główne luki (spec funkcjonalności ↔ stan obecny)
 
-| Moduł z karty funkcjonalności | Backend | `frontend_do_backendu` | Luka |
+| Moduł z karty funkcjonalności | Backend | `frontend` | Luka |
 |---|---|---|---|
 | Rejestracja / logowanie / sesje JWT | ✅ | ✅ | — |
 | Zarządzanie danymi logowania / zmiana hasła | ✅ | 🟡 | UI zmiany hasła do dopracowania |
@@ -73,7 +73,7 @@ Legenda: ✅ gotowe · 🟡 częściowe · 🔴 brak
 
 ### Faza 0 — Porządki i fundamenty wizualne
 - Skorygować `widoki-design-system.md` §4/§7: oznaczyć nieistniejące komponenty jako „do zrobienia".
-- Wyekstrahować z `frontend_koncowy` **wzorce układu** (StatCard, trójstan loading/error/empty, układ nagłówków `text-3xl font-bold`, karty `rounded-xl border`) i przełożyć je na **paletę slate** istniejących komponentów `frontend_do_backendu/src/components/ui/*.jsx`. Cel: jeden spójny zestaw klocków do portu widoków.
+- Wyekstrahować z `frontend_koncowy` **wzorce układu** (StatCard, trójstan loading/error/empty, układ nagłówków `text-3xl font-bold`, karty `rounded-xl border`) i przełożyć je na **paletę slate** istniejących komponentów `frontend/src/components/ui/*.jsx`. Cel: jeden spójny zestaw klocków do portu widoków.
 
 ### Faza 1 — Rozszerzenie modelu domenowego (backend) — odblokowuje port
 - **Encja `Project`** w `models.py`: nazwa, opis, status (active/archived/draft), postęp (liczony z zadań), członkowie, powiązanie z `Group`/organizacją. Endpointy CRUD `/api/projects`, `/projects/:id`. Relacja `Task.project_id`.
@@ -86,7 +86,7 @@ Legenda: ✅ gotowe · 🟡 częściowe · 🔴 brak
 
 ### Faza 3 — Port koncepcji Projektów i Zadań (decyzja §1.3)
 - **Projekty:** nowy widok listy (karty: status, postęp, członkowie) + formularz tworzenia/edycji + szczegóły `/projects/:id` (zadania projektu, członkowie, postęp). Podpięte pod `/api/projects`.
-- **Zadania:** widok **kanban** (To Do / In Progress / Done) zgodny z koncepcją `frontend_koncowy`, z DnD między kolumnami + optimistic update (`version`). Zachować istniejące filtry/kategorie z `frontend_do_backendu`. Priorytet i assignee w formularzu.
+- **Zadania:** widok **kanban** (To Do / In Progress / Done) zgodny z koncepcją `frontend_koncowy`, z DnD między kolumnami + optimistic update (`version`). Zachować istniejące filtry/kategorie z `frontend`. Priorytet i assignee w formularzu.
 - Widok szczegółów zadania: komentarze + historia aktywności + załączniki + relacje (podzadania) — endpointy już istnieją.
 
 ### Faza 4 — Współpraca i widoczność
@@ -107,7 +107,7 @@ Legenda: ✅ gotowe · 🟡 częściowe · 🔴 brak
 - **Wysyłka e-mail** (reset hasła, powiadomienia) — wymaga decyzji o providerze (SMTP/usługa). Do tego czasu reset zostaje „token w odpowiedzi" (tylko dev).
 - **Project vs Group** — po dodaniu `Project` trzeba jasno rozgraniczyć rolę grupy (zespół/organizacja) od projektu (jednostka pracy z zadaniami), żeby nie zdublować znaczeń.
 - **Migracje** — `db.create_all()` nie zmienia istniejących tabel; nowe encje wymagają świadomej migracji lub resetu dev (`scripts/dev_db_total_reset.py`).
-- **Port wizualny ≠ kopiuj-wklej** — `frontend_koncowy` to Tailwind 4 + tokeny OKLCH + base-ui/shadcn; `frontend_do_backendu` to Tailwind 3 + paleta slate + autorskie `ui/*.jsx`. Klas i komponentów nie da się przenieść 1:1 — portujemy układ i logikę, przepisując style na slate. To realny nakład, nie kosmetyka.
+- **Port wizualny ≠ kopiuj-wklej** — `frontend_koncowy` to Tailwind 4 + tokeny OKLCH + base-ui/shadcn; `frontend` to Tailwind 3 + paleta slate + autorskie `ui/*.jsx`. Klas i komponentów nie da się przenieść 1:1 — portujemy układ i logikę, przepisując style na slate. To realny nakład, nie kosmetyka.
 - **Kolory typów kalendarza** — w `frontend_koncowy` zaszyte lokalnie (blue/red/amber); przy porcie ustalić ich odpowiedniki w palecie slate + akcenty.
 
 ---
@@ -115,7 +115,7 @@ Legenda: ✅ gotowe · 🟡 częściowe · 🔴 brak
 ## 6. Sugerowana kolejność akceptacji
 
 1. ✅ Zakres encji **Project** i **CalendarEvent** — zatwierdzony (Załącznik A). JSON-owe endpointy dashboardu — ✅ zatwierdzone.
-2. Potwierdzić, że port trzyma się palety slate `frontend_do_backendu` (bez wprowadzania shadcn/OKLCH).
+2. Potwierdzić, że port trzyma się palety slate `frontend` (bez wprowadzania shadcn/OKLCH).
 3. Po akceptacji — rozbić Fazę 1 (backend) i Fazę 2 (Dashboard + Kalendarz) na konkretne zadania implementacyjne.
 
 ---

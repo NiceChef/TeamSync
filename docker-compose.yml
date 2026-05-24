@@ -61,7 +61,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend_do_backendu
+      context: ./frontend
     container_name: tasks-frontend-dev
     depends_on:
       - backend
@@ -71,7 +71,7 @@ services:
     ports:
       - "${FRONTEND_HOST_PORT:-5173}:5173"
     volumes:
-      - ./frontend_do_backendu:/app
+      - ./frontend:/app
       # Anonimowy wolumen chroni node_modules z obrazu przed nadpisaniem bind-mountem.
       - /app/node_modules
 
