@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Paperclip, Send } from 'lucide-react';
+import Button from './ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription } from './ui/Card';
+import { Field, FieldLabel, FieldError } from './ui/Field';
+import TextInput from './ui/TextInput';
+import Select from './ui/Select';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -641,29 +647,20 @@ function EditTask({ isAuthenticated }) {
 
   if (loading) {
     return (
-      <div className="more-container">
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <p>Loading task...</p>
-        </div>
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="h-40 animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50" />
       </div>
     );
   }
 
   if (!task) {
     return (
-      <div className="more-container">
-        <div className="more-header">
-          <h2>Edit Task</h2>
-          <button
-            onClick={() => navigate('/tasks')}
-            className="back-button"
-          >
-            ← Back to Tasks
-          </button>
-        </div>
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <p>Task not found</p>
-        </div>
+      <div className="mx-auto w-full max-w-4xl space-y-4">
+        <Button variant="ghost" onClick={() => navigate('/tasks')}>
+          <ArrowLeft className="h-4 w-4" />
+          Wróć do zadań
+        </Button>
+        <FieldError>Nie znaleziono zadania.</FieldError>
       </div>
     );
   }
@@ -791,82 +788,75 @@ function EditTask({ isAuthenticated }) {
   };
 
   return (
-    <div className="more-container">
-      <div className="more-header">
-        <h2>Edit Task</h2>
-        <button
-          onClick={() => navigate('/tasks')}
-          className="back-button"
-        >
-          ← Back to Tasks
-        </button>
+    <div className="mx-auto w-full max-w-4xl space-y-6">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="bg-gradient-to-r from-indigo-600 to-purple-700 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+            Edytuj zadanie
+          </h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Zmień szczegóły, status i relacje; zarządzaj komentarzami oraz załącznikami.
+          </p>
+        </div>
+        <Button onClick={() => navigate('/tasks')}>
+          <ArrowLeft className="h-4 w-4" />
+          Wróć do zadań
+        </Button>
       </div>
 
-      {error && (
-        <div className="error-message" style={{
-          padding: '1rem',
-          marginBottom: '1rem',
-          background: '#fee',
-          border: '1px solid #fcc',
-          borderRadius: '6px',
-          color: '#c33'
-        }}>
-          {error}
-        </div>
-      )}
+      <FieldError>{error}</FieldError>
 
-      <div className="more-content">
-        <div className="more-section">
-          <h3>Task Details</h3>
-          <form onSubmit={handleUpdateTask}>
-            <div className="form-row">
-              {/* ✅ PIERWSZA LINIA: Planned Date i Deadline obok siebie */}
-              <div className="form-group" style={{ flex: '1' }}>
-                <label htmlFor="edit-planned_date">Planned Date</label>
-                <input
-                  type="date"
-                  id="edit-planned_date"
-                  name="planned_date"
-                  value={editingTask.planned_date}
-                  onChange={handleEditInputChange}
-                  disabled={submitting}
-                />
-              </div>
-              <div className="form-group" style={{ flex: '1' }}>
-                <label htmlFor="edit-deadline">Deadline</label>
-                <input
-                  type="date"
-                  id="edit-deadline"
-                  name="deadline"
-                  value={editingTask.deadline}
-                  onChange={handleEditInputChange}
-                  disabled={submitting}
-                />
-              </div>
-            </div>
-
-            {/* ✅ DRUGA LINIA: Topic na całą szerokość */}
-            <div className="form-group" style={{ width: '100%', marginTop: '1rem' }}>
-              <label htmlFor="edit-topic">Topic *</label>
-              <input
-                type="text"
-                id="edit-topic"
-                name="topic"
-                value={editingTask.topic}
+      <Card>
+        <CardHeader>
+          <CardTitle>Szczegóły zadania</CardTitle>
+          <CardDescription>Podstawowe informacje, daty i status.</CardDescription>
+        </CardHeader>
+        <form onSubmit={handleUpdateTask} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel>Data planu</FieldLabel>
+              <TextInput
+                type="date"
+                id="edit-planned_date"
+                name="planned_date"
+                value={editingTask.planned_date}
                 onChange={handleEditInputChange}
-                placeholder="Enter task topic"
-                required
                 disabled={submitting}
               />
-            </div>
+            </Field>
+            <Field>
+              <FieldLabel>Deadline</FieldLabel>
+              <TextInput
+                type="date"
+                id="edit-deadline"
+                name="deadline"
+                value={editingTask.deadline}
+                onChange={handleEditInputChange}
+                disabled={submitting}
+              />
+            </Field>
+          </div>
 
-            {/* ✅ TRZECIA LINIA: Notes na całą szerokość */}
-            <div className="form-group" style={{ width: '100%', marginTop: '1rem' }}>
-              <label htmlFor="edit-notes">Notes</label>
-              <div
-                ref={editNotesRef}
-                contentEditable={!submitting}
-                id="edit-notes"
+          <Field>
+            <FieldLabel>Temat *</FieldLabel>
+            <TextInput
+              type="text"
+              id="edit-topic"
+              name="topic"
+              value={editingTask.topic}
+              onChange={handleEditInputChange}
+              placeholder="Wpisz temat zadania"
+              required
+              disabled={submitting}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel>Notatki</FieldLabel>
+            <div
+              ref={editNotesRef}
+              contentEditable={!submitting}
+              id="edit-notes"
                 onInput={(e) => {
                   setEditingTask({
                     ...editingTask,
@@ -908,20 +898,8 @@ function EditTask({ isAuthenticated }) {
                     }
                   }
                 }}
-                style={{
-                  width: '100%',
-                  minHeight: '150px',
-                  padding: '0.5rem',
-                  border: '2px solid #e2e8f0',
-                  borderRadius: '6px',
-                  fontSize: '0.875rem',
-                  fontFamily: 'inherit',
-                  resize: 'vertical',
-                  overflow: 'auto',
-                  backgroundColor: submitting ? '#f7fafc' : 'white',
-                  cursor: submitting ? 'not-allowed' : 'text'
-                }}
-                data-placeholder="Add notes, links, dates, drawings..."
+                className="min-h-[150px] w-full overflow-auto rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition empty:before:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                data-placeholder="Dodaj notatki, linki, daty, obrazki..."
               />
               <style>{`
               #edit-notes:empty:before {
@@ -933,516 +911,447 @@ function EditTask({ isAuthenticated }) {
                 max-width: 100%;
                 height: auto;
                 margin: 0.5rem 0;
-                border-radius: 4px;
+                border-radius: 0.5rem;
               }
             `}</style>
-            </div>
+          </Field>
 
-            <div className="form-group checkbox-group" style={{ marginTop: '1rem' }}>
-              <label>
-                <input
-                  type="checkbox"
-                  name="completed"
-                  checked={editingTask.completed}
-                  onChange={handleEditInputChange}
-                  disabled={submitting}
-                />
-                Mark as completed
-              </label>
-            </div>
+          <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800">
+            <input
+              type="checkbox"
+              name="completed"
+              checked={editingTask.completed}
+              onChange={handleEditInputChange}
+              disabled={submitting}
+              className="accent-indigo-600"
+            />
+            Oznacz jako zakończone
+          </label>
 
-            <div
-              className="form-row"
-              style={{ marginTop: '1rem', flexWrap: 'wrap', gap: '1rem', display: 'flex' }}
-            >
-              <div className="form-group" style={{ flex: '1', minWidth: '140px' }}>
-                <label htmlFor="edit-status">Status (baza)</label>
-                <select
-                  id="edit-status"
-                  value={editingTask.status_id === '' ? '' : String(editingTask.status_id)}
-                  onChange={(e) =>
-                    setEditingTask((p) => ({
-                      ...p,
-                      status_id: e.target.value === '' ? '' : Number(e.target.value),
-                    }))
-                  }
-                  disabled={submitting}
-                >
-                  <option value="">—</option>
-                  {taskStatuses.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group" style={{ flex: '1', minWidth: '120px' }}>
-                <label htmlFor="edit-priority">Priorytet</label>
-                <select
-                  id="edit-priority"
-                  name="priority"
-                  value={editingTask.priority}
-                  onChange={handleEditInputChange}
-                  disabled={submitting}
-                >
-                  <option value="low">Niski</option>
-                  <option value="medium">Średni</option>
-                  <option value="high">Wysoki</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ flex: '1', minWidth: '160px' }}>
-                <label htmlFor="edit-project">Projekt</label>
-                <select
-                  id="edit-project"
-                  value={editingTask.project_id === '' ? '' : String(editingTask.project_id)}
-                  onChange={(e) =>
-                    setEditingTask((p) => ({
-                      ...p,
-                      project_id: e.target.value === '' ? '' : Number(e.target.value),
-                    }))
-                  }
-                  disabled={submitting}
-                >
-                  <option value="">—</option>
-                  {projectsList.map((proj) => (
-                    <option key={proj.id} value={proj.id}>
-                      {proj.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {meUser && meUser.role !== 'client' && (
-                <>
-                  <div className="form-group" style={{ flex: '1', minWidth: '160px' }}>
-                    <label htmlFor="edit-assignee">Przypisany</label>
-                    <select
-                      id="edit-assignee"
-                      value={
-                        editingTask.assignee_user_id === ''
-                          ? ''
-                          : String(editingTask.assignee_user_id)
-                      }
-                      onChange={(e) =>
-                        setEditingTask((p) => ({
-                          ...p,
-                          assignee_user_id:
-                            e.target.value === '' ? '' : Number(e.target.value),
-                        }))
-                      }
-                      disabled={submitting}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Field>
+              <FieldLabel>Status</FieldLabel>
+              <Select
+                id="edit-status"
+                value={editingTask.status_id === '' ? '' : String(editingTask.status_id)}
+                onChange={(e) =>
+                  setEditingTask((p) => ({
+                    ...p,
+                    status_id: e.target.value === '' ? '' : Number(e.target.value),
+                  }))
+                }
+                disabled={submitting}
+              >
+                <option value="">—</option>
+                {taskStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>Priorytet</FieldLabel>
+              <Select
+                id="edit-priority"
+                name="priority"
+                value={editingTask.priority}
+                onChange={handleEditInputChange}
+                disabled={submitting}
+              >
+                <option value="low">Niski</option>
+                <option value="medium">Średni</option>
+                <option value="high">Wysoki</option>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>Projekt</FieldLabel>
+              <Select
+                id="edit-project"
+                value={editingTask.project_id === '' ? '' : String(editingTask.project_id)}
+                onChange={(e) =>
+                  setEditingTask((p) => ({
+                    ...p,
+                    project_id: e.target.value === '' ? '' : Number(e.target.value),
+                  }))
+                }
+                disabled={submitting}
+              >
+                <option value="">—</option>
+                {projectsList.map((proj) => (
+                  <option key={proj.id} value={proj.id}>
+                    {proj.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {meUser && meUser.role !== 'client' && (
+              <>
+                <Field>
+                  <FieldLabel>Przypisany</FieldLabel>
+                  <Select
+                    id="edit-assignee"
+                    value={
+                      editingTask.assignee_user_id === ''
+                        ? ''
+                        : String(editingTask.assignee_user_id)
+                    }
+                    onChange={(e) =>
+                      setEditingTask((p) => ({
+                        ...p,
+                        assignee_user_id:
+                          e.target.value === '' ? '' : Number(e.target.value),
+                      }))
+                    }
+                    disabled={submitting}
+                  >
+                    <option value="">—</option>
+                    {assignUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.username}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel>Grupa</FieldLabel>
+                  <Select
+                    id="edit-group"
+                    value={editingTask.group_id === '' ? '' : String(editingTask.group_id)}
+                    onChange={(e) =>
+                      setEditingTask((p) => ({
+                        ...p,
+                        group_id: e.target.value === '' ? '' : Number(e.target.value),
+                      }))
+                    }
+                    disabled={submitting}
+                  >
+                    <option value="">—</option>
+                    {groupsList.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Wersja optymistyczna: {editingTask.version} (przy zapisie wykrywany konflikt edycji)
+          </p>
+
+          <div className="border-t border-slate-200 pt-6 dark:border-slate-800">
+            <FieldLabel>Kategorie</FieldLabel>
+            {categories.length === 0 ? (
+              <p className="text-sm italic text-slate-500 dark:text-slate-400">
+                Brak kategorii. Kategorie możesz utworzyć w widoku kategorii.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {categories.map(cat => {
+                  const taskCategories = editingTask.categories || [];
+                  const isAssigned = taskCategories.some(tc => tc.id === cat.id);
+                  return (
+                    <label
+                      key={cat.id}
+                      className={[
+                        'inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition',
+                        isAssigned
+                          ? 'bg-indigo-50 font-semibold text-slate-900 dark:bg-indigo-500/15 dark:text-slate-100'
+                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800',
+                      ].join(' ')}
+                      style={{ borderColor: isAssigned ? cat.color || '#6366f1' : undefined }}
                     >
-                      <option value="">—</option>
-                      {assignUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.username}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ flex: '1', minWidth: '160px' }}>
-                    <label htmlFor="edit-group">Grupa</label>
-                    <select
-                      id="edit-group"
-                      value={editingTask.group_id === '' ? '' : String(editingTask.group_id)}
-                      onChange={(e) =>
-                        setEditingTask((p) => ({
-                          ...p,
-                          group_id: e.target.value === '' ? '' : Number(e.target.value),
-                        }))
-                      }
-                      disabled={submitting}
-                    >
-                      <option value="">—</option>
-                      {groupsList.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </>
-              )}
-            </div>
-            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '0.5rem' }}>
-              Wersja optymistyczna: {editingTask.version} (przy zapisie wykrywany konflikt edycji)
-            </p>
+                      <input
+                        type="checkbox"
+                        checked={isAssigned}
+                        onChange={() => handleToggleTaskCategory(cat.id, isAssigned)}
+                        disabled={submitting}
+                        className="accent-indigo-600"
+                      />
+                      <span
+                        className="h-3 w-3 shrink-0 rounded-full"
+                        style={{ backgroundColor: cat.color || '#667eea' }}
+                      />
+                      <span>{cat.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e2e8f0' }}>
-              <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 600 }}>Categories:</label>
-              {categories.length === 0 ? (
-                <p style={{ color: '#666', fontSize: '0.875rem', fontStyle: 'italic' }}>
-                  No categories available. Create categories using the "Categories" button on the tasks page.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  {categories.map(cat => {
-                    const taskCategories = editingTask.categories || [];
-                    const isAssigned = taskCategories.some(tc => tc.id === cat.id);
-                    return (
-                      <label
-                        key={cat.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          padding: '0.5rem 1rem',
-                          background: isAssigned ? (cat.color ? `${cat.color}20` : '#f7fafc') : 'white',
-                          border: `2px solid ${isAssigned ? (cat.color || '#667eea') : '#e2e8f0'}`,
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontSize: '0.875rem',
-                          transition: 'all 0.2s ease'
-                        }}
+          <div className="flex flex-col gap-2 border-t border-slate-200 pt-6 dark:border-slate-800 sm:flex-row">
+            <Button type="submit" variant="primary" size="lg" disabled={submitting}>
+              {submitting ? 'Zapisywanie...' : 'Zapisz zmiany'}
+            </Button>
+            <Button type="button" size="lg" onClick={handleCancelEdit} disabled={submitting}>
+              Anuluj
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Relacje</CardTitle>
+          <CardDescription>Zadanie nadrzędne i podzadania.</CardDescription>
+        </CardHeader>
+
+        <div className="space-y-6">
+          <div>
+            <FieldLabel>Zadanie nadrzędne</FieldLabel>
+            {incomingRelations.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {incomingRelations.map(rel => {
+                  const parentTask = tasks.find(t => t.id === rel.source_task_id);
+                  return parentTask ? (
+                    <div
+                      key={rel.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                    >
+                      <span className="text-slate-800 dark:text-slate-200">{parentTask.topic}</span>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleRemoveParentRelation(rel.id)}
+                        disabled={submitting}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isAssigned}
-                          onChange={() => handleToggleTaskCategory(cat.id, isAssigned)}
-                          disabled={submitting}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        <span
-                          style={{
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            background: cat.color || '#667eea',
-                            display: 'inline-block'
-                          }}
-                        />
-                        <span style={{ fontWeight: isAssigned ? 600 : 400 }}>
-                          {cat.name}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e2e8f0' }}>
-              <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 600 }}>Parent Task:</label>
-              {incomingRelations.length > 0 && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 500 }}>Current parent task:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {incomingRelations.map(rel => {
-                      const parentTask = tasks.find(t => t.id === rel.source_task_id);
-                      return parentTask ? (
-                        <div
-                          key={rel.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '0.5rem 1rem',
-                            background: '#f7fafc',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '6px',
-                            fontSize: '0.875rem'
-                          }}
-                        >
-                          <span>{parentTask.topic}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveParentRelation(rel.id)}
-                            className="rounded-md border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50"
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                            disabled={submitting}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              )}
-              <div>
-                <label htmlFor="parent-task-select" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                  {incomingRelations.length > 0 ? 'Change parent task:' : 'Add parent task:'}
-                </label>
-                <div className="select-with-button-container" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                  <select
-                    id="parent-task-select"
-                    value={selectedParentTaskId}
-                    onChange={(e) => {
-                      setSelectedParentTaskId(e.target.value);
-                      setError('');
-                    }}
-                    disabled={submitting || availableParentTasks.length === 0}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      fontSize: '14px',
-                      borderRadius: '6px',
-                      border: '1px solid #e2e8f0',
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <option value="">-- Select a task --</option>
-                    {availableParentTasks.length === 0 ? (
-                      <option value="" disabled>No available tasks to add as parent</option>
-                    ) : (
-                      availableParentTasks.map(task => (
-                        <option key={task.id} value={task.id}>
-                          {task.topic} {task.completed ? '(Completed)' : ''}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (selectedParentTaskId) {
-                        // Jeśli już jest parent, najpierw usuń stary
-                        if (incomingRelations.length > 0) {
-                          const oldRelation = incomingRelations[0];
-                          const removed = await handleRemoveParentRelation(oldRelation.id);
-                          if (removed) {
-                            // Po usunięciu dodaj nowy
-                            await handleCreateParentRelation(selectedParentTaskId, editingTask.id);
-                          }
-                        } else {
-                          await handleCreateParentRelation(selectedParentTaskId, editingTask.id);
-                        }
-                      }
-                    }}
-                    className="rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:-translate-y-0.5 disabled:opacity-50"
-                    disabled={submitting || !selectedParentTaskId || availableParentTasks.length === 0}
-                    style={{ padding: '8px 16px', fontSize: '0.875rem' }}
-                  >
-                    {incomingRelations.length > 0 ? 'Change' : 'Add'}
-                  </button>
-                </div>
-                {availableParentTasks.length === 0 && (
-                  <p style={{ marginTop: '8px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-                    All tasks are already related to this task or would create a cycle.
-                  </p>
-                )}
+                        Usuń
+                      </Button>
+                    </div>
+                  ) : null;
+                })}
               </div>
-            </div>
-
-            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e2e8f0' }}>
-              <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 600 }}>Subtasks:</label>
-              {outgoingRelations.length > 0 && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <p style={{ fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 500 }}>Current subtasks:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {outgoingRelations.map(rel => {
-                      const subtask = tasks.find(t => t.id === rel.target_task_id);
-                      return subtask ? (
-                        <div
-                          key={rel.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '0.5rem 1rem',
-                            background: '#f7fafc',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '6px',
-                            fontSize: '0.875rem'
-                          }}
-                        >
-                          <span>{subtask.topic}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveSubtaskRelation(editingTask.id, rel.id)}
-                            className="rounded-md border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50"
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                            disabled={submitting}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              )}
-              <div>
-                <label htmlFor="subtask-select" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                  Add new subtask:
-                </label>
-                <div className="select-with-button-container" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                  <select
-                    id="subtask-select"
-                    value={selectedSubtaskId}
-                    onChange={(e) => {
-                      setSelectedSubtaskId(e.target.value);
-                      setError('');
-                    }}
-                    disabled={submitting || availableTasks.length === 0}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      fontSize: '14px',
-                      borderRadius: '6px',
-                      border: '1px solid #e2e8f0',
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <option value="">-- Select a task --</option>
-                    {availableTasks.length === 0 ? (
-                      <option value="" disabled>No available tasks to add as subtask</option>
-                    ) : (
-                      availableTasks.map(task => (
-                        <option key={task.id} value={task.id}>
-                          {task.topic} {task.completed ? '(Completed)' : ''}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedSubtaskId) {
-                        handleCreateSubtaskRelation(editingTask.id, selectedSubtaskId);
-                      }
-                    }}
-                    className="rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:-translate-y-0.5 disabled:opacity-50"
-                    disabled={submitting || !selectedSubtaskId || availableTasks.length === 0}
-                    style={{ padding: '8px 16px', fontSize: '0.875rem' }}
-                  >
-                    Add
-                  </button>
-                </div>
-                {availableTasks.length === 0 && (
-                  <p style={{ marginTop: '8px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-                    All tasks are already related to this task or would create a cycle.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: '1.5rem',
-                paddingTop: '1.5rem',
-                borderTop: '1px solid #e2e8f0',
-              }}
-            >
-              <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>Komentarze</h4>
-              <ul style={{ listStyle: 'none', padding: 0, marginBottom: '1rem' }}>
-                {comments.map((c) => (
-                  <li
-                    key={c.id}
-                    style={{
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 8,
-                      padding: '0.5rem 0.75rem',
-                      marginBottom: 8,
-                      fontSize: '0.875rem',
-                    }}
-                  >
-                    <strong>{c.author_username || 'Użytkownik'}</strong>{' '}
-                    <span style={{ color: '#64748b' }}>{c.created_at}</span>
-                    <div style={{ marginTop: 4 }}>{c.body}</div>
-                  </li>
-                ))}
-              </ul>
-              <form onSubmit={handleAddComment} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  value={commentBody}
-                  onChange={(e) => setCommentBody(e.target.value)}
-                  placeholder="Treść komentarza"
-                  style={{ flex: 1, minWidth: 200, padding: '0.5rem', borderRadius: 6, border: '1px solid #cbd5e1' }}
-                />
-                <button
-                  type="submit"
-                  className="rounded-lg bg-slate-700 px-4 py-2 text-sm text-white"
-                  disabled={submitting}
-                >
-                  Dodaj
-                </button>
-              </form>
-            </div>
-
-            <div
-              style={{
-                marginTop: '1.5rem',
-                paddingTop: '1.5rem',
-                borderTop: '1px solid #e2e8f0',
-              }}
-            >
-              <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>Historia aktywności</h4>
-              <ul style={{ fontSize: '0.8rem', color: '#475569', maxHeight: 200, overflow: 'auto' }}>
-                {activities.map((a) => (
-                  <li key={a.id} style={{ marginBottom: 6 }}>
-                    [{a.created_at}] {a.username || '?'} — {a.action}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div
-              style={{
-                marginTop: '1.5rem',
-                paddingTop: '1.5rem',
-                borderTop: '1px solid #e2e8f0',
-              }}
-            >
-              <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>Załączniki</h4>
-              <label className="inline-flex cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white">
-                Wybierz plik
-                <input type="file" className="hidden" onChange={handleUploadAttachment} />
-              </label>
-              <ul style={{ marginTop: '0.75rem', fontSize: '0.875rem' }}>
-                {attachments.map((at) => (
-                  <li key={at.id} style={{ marginBottom: 4 }}>
-                    <a
-                      href={`${API_URL}/api/attachments/${at.id}/download`}
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        const token = localStorage.getItem('access_token');
-                        const r = await fetch(`${API_URL}/api/attachments/${at.id}/download`, {
-                          headers: { Authorization: `Bearer ${token}` },
-                        });
-                        if (r.ok) {
-                          const blob = await r.blob();
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = at.original_name;
-                          a.click();
-                          URL.revokeObjectURL(url);
-                        }
-                      }}
-                    >
-                      {at.original_name}
-                    </a>{' '}
-                    ({Math.round((at.size_bytes || 0) / 1024)} KB)
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
-              <button
-                type="submit"
-                className="rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:-translate-y-0.5 disabled:opacity-50"
-                disabled={submitting}
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Select
+                id="parent-task-select"
+                value={selectedParentTaskId}
+                onChange={(e) => {
+                  setSelectedParentTaskId(e.target.value);
+                  setError('');
+                }}
+                disabled={submitting || availableParentTasks.length === 0}
               >
-                {submitting ? 'Updating...' : 'Update Task'}
-              </button>
-              <button
+                <option value="">— Wybierz zadanie —</option>
+                {availableParentTasks.length === 0 ? (
+                  <option value="" disabled>Brak dostępnych zadań</option>
+                ) : (
+                  availableParentTasks.map(task => (
+                    <option key={task.id} value={task.id}>
+                      {task.topic} {task.completed ? '(zakończone)' : ''}
+                    </option>
+                  ))
+                )}
+              </Select>
+              <Button
                 type="button"
-                onClick={handleCancelEdit}
-                className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                disabled={submitting}
+                variant="primary"
+                onClick={async () => {
+                  if (selectedParentTaskId) {
+                    if (incomingRelations.length > 0) {
+                      const oldRelation = incomingRelations[0];
+                      const removed = await handleRemoveParentRelation(oldRelation.id);
+                      if (removed) {
+                        await handleCreateParentRelation(selectedParentTaskId, editingTask.id);
+                      }
+                    } else {
+                      await handleCreateParentRelation(selectedParentTaskId, editingTask.id);
+                    }
+                  }
+                }}
+                disabled={submitting || !selectedParentTaskId || availableParentTasks.length === 0}
               >
-                Cancel
-              </button>
+                {incomingRelations.length > 0 ? 'Zmień' : 'Dodaj'}
+              </Button>
             </div>
-          </form>
+            {availableParentTasks.length === 0 && (
+              <p className="mt-2 text-xs italic text-slate-500 dark:text-slate-400">
+                Wszystkie zadania są już powiązane albo utworzyłyby zapętloną relację.
+              </p>
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 pt-6 dark:border-slate-800">
+            <FieldLabel>Podzadania</FieldLabel>
+            {outgoingRelations.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {outgoingRelations.map(rel => {
+                  const subtask = tasks.find(t => t.id === rel.target_task_id);
+                  return subtask ? (
+                    <div
+                      key={rel.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                    >
+                      <span className="text-slate-800 dark:text-slate-200">{subtask.topic}</span>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleRemoveSubtaskRelation(editingTask.id, rel.id)}
+                        disabled={submitting}
+                      >
+                        Usuń
+                      </Button>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Select
+                id="subtask-select"
+                value={selectedSubtaskId}
+                onChange={(e) => {
+                  setSelectedSubtaskId(e.target.value);
+                  setError('');
+                }}
+                disabled={submitting || availableTasks.length === 0}
+              >
+                <option value="">— Wybierz zadanie —</option>
+                {availableTasks.length === 0 ? (
+                  <option value="" disabled>Brak dostępnych zadań</option>
+                ) : (
+                  availableTasks.map(task => (
+                    <option key={task.id} value={task.id}>
+                      {task.topic} {task.completed ? '(zakończone)' : ''}
+                    </option>
+                  ))
+                )}
+              </Select>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => {
+                  if (selectedSubtaskId) {
+                    handleCreateSubtaskRelation(editingTask.id, selectedSubtaskId);
+                  }
+                }}
+                disabled={submitting || !selectedSubtaskId || availableTasks.length === 0}
+              >
+                Dodaj
+              </Button>
+            </div>
+            {availableTasks.length === 0 && (
+              <p className="mt-2 text-xs italic text-slate-500 dark:text-slate-400">
+                Wszystkie zadania są już powiązane albo utworzyłyby zapętloną relację.
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Komentarze</CardTitle>
+        </CardHeader>
+        {comments.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">Brak komentarzy.</p>
+        ) : (
+          <ul className="space-y-2">
+            {comments.map((c) => (
+              <li
+                key={c.id}
+                className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {c.author_username || 'Użytkownik'}
+                  </span>
+                  <span className="text-xs text-slate-400">{c.created_at}</span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{c.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form onSubmit={handleAddComment} className="mt-4 flex gap-2">
+          <TextInput
+            type="text"
+            value={commentBody}
+            onChange={(e) => setCommentBody(e.target.value)}
+            placeholder="Napisz komentarz..."
+          />
+          <Button type="submit" variant="primary" disabled={submitting || !commentBody.trim()}>
+            <Send className="h-4 w-4" />
+            Dodaj
+          </Button>
+        </form>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Historia aktywności</CardTitle>
+        </CardHeader>
+        {activities.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">Brak zarejestrowanej aktywności.</p>
+        ) : (
+          <ul className="max-h-56 space-y-2 overflow-auto">
+            {activities.map((a) => (
+              <li key={a.id} className="flex items-start gap-3 text-sm">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />
+                <span className="text-slate-600 dark:text-slate-300">
+                  <span className="font-medium text-slate-800 dark:text-slate-100">
+                    {a.username || 'Użytkownik'}
+                  </span>{' '}
+                  {a.action}
+                  <span className="ml-1 text-xs text-slate-400">· {a.created_at}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Załączniki</CardTitle>
+        </CardHeader>
+        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800">
+          <Paperclip className="h-4 w-4" />
+          Dodaj plik
+          <input type="file" className="hidden" onChange={handleUploadAttachment} />
+        </label>
+        {attachments.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {attachments.map((at) => (
+              <li
+                key={at.id}
+                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
+              >
+                <a
+                  href={`${API_URL}/api/attachments/${at.id}/download`}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    const token = localStorage.getItem('access_token');
+                    const r = await fetch(`${API_URL}/api/attachments/${at.id}/download`, {
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (r.ok) {
+                      const blob = await r.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = at.original_name;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }
+                  }}
+                  className="flex min-w-0 items-center gap-2 text-sm text-indigo-600 hover:underline dark:text-indigo-300"
+                >
+                  <span className="min-w-0 truncate">{at.original_name}</span>
+                  <span className="shrink-0 text-xs text-slate-400">
+                    {Math.round((at.size_bytes || 0) / 1024)} KB
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }
