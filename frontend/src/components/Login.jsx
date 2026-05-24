@@ -93,7 +93,7 @@ export default function Login({ onLogin, onSwitchToRegister }) {
 
           <div>
             <label htmlFor="username" className="text-sm font-medium text-slate-700">
-              Nazwa użytkownika
+              Nazwa użytkownika lub e-mail
             </label>
             <input
               type="text"

@@ -111,7 +111,14 @@ def login():
     if not data or not data.get('username') or not data.get('password'):
         return jsonify({'error': 'Username and password are required'}), 400
 
-    user = User.query.filter_by(username=data['username']).first()
+    login_id = data['username'].strip()
+    # Pozwól logować się nazwą użytkownika (dokładnie) lub e-mailem (bez wielkości liter).
+    user = User.query.filter(
+        db_or(
+            User.username == login_id,
+            db.func.lower(User.email) == login_id.lower(),
+        )
+    ).first()
 
     if not user or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid username or password'}), 401
