@@ -8,6 +8,7 @@ import {
     User,
     MoreHorizontal,
 } from 'lucide-react';
+import { ROLE } from '../../constants/roles';
 
 export const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,5 +23,5 @@ export const navItems = [
 
 // Pozycje widoczne dla danej roli — konta `client` nie widzą pozycji employee-only.
 export function navItemsForRole(role) {
-    return navItems.filter((item) => !(item.employeeOnly && role === 'client'));
+    return navItems.filter((item) => !(item.employeeOnly && role === ROLE.CLIENT));
 }

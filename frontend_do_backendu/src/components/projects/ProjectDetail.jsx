@@ -23,12 +23,8 @@ import {
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { PROJECT_STATUSES, statusMeta, initials } from './projectUtils';
-
-const PRIORITY_META = {
-    high: { label: 'Wysoki', variant: 'danger' },
-    medium: { label: 'Średni', variant: 'warning' },
-    low: { label: 'Niski', variant: 'default' },
-};
+import { priorityMeta } from '../../constants/priorities';
+import { canManage as userCanManage } from '../../constants/roles';
 
 function EditProjectForm({ project, onSaved, onCancel }) {
     const [name, setName] = useState(project.name);
@@ -248,7 +244,7 @@ function TasksPanel({ tasks }) {
             ) : (
                 <ul className="space-y-2">
                     {tasks.map((t) => {
-                        const prio = PRIORITY_META[t.priority] || PRIORITY_META.medium;
+                        const prio = priorityMeta(t.priority);
                         return (
                             <li
                                 key={t.id}
@@ -347,8 +343,7 @@ export default function ProjectDetail({ isAuthenticated }) {
     }
 
     const meta = statusMeta(project.status);
-    const isClient = me?.role === 'client';
-    const canManage = !isClient;
+    const canManage = userCanManage(me);
     const isOwner = me && me.id === project.created_by_id;
     const tasks = project.tasks || [];
 

@@ -14,8 +14,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useTasksContext } from '../context/TasksContext';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_URL, fetchWithAuth } from '../api/authFetch';
 
 function More({ isAuthenticated }) {
   const navigate = useNavigate();
@@ -24,72 +23,6 @@ function More({ isAuthenticated }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notifications, setNotifications] = useState([]);
-
-  const getAuthToken = () => localStorage.getItem('access_token');
-
-  const refreshToken = async () => {
-    const refreshTokenValue = localStorage.getItem('refresh_token');
-    if (!refreshTokenValue) {
-      throw new Error('No refresh token available');
-    }
-
-    const response = await fetch(`${API_URL}/api/auth/refresh`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${refreshTokenValue}` },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-      }
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to refresh token');
-    }
-
-    const data = await response.json();
-    localStorage.setItem('access_token', data.access_token);
-    if (data.refresh_token) {
-      localStorage.setItem('refresh_token', data.refresh_token);
-    }
-    return data.access_token;
-  };
-
-  const fetchWithAuth = async (url, options = {}) => {
-    let token = getAuthToken();
-    if (!token) {
-      throw new Error('No authentication token available');
-    }
-
-    let response = await fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (response.status === 401) {
-      const refreshTokenValue = localStorage.getItem('refresh_token');
-      if (refreshTokenValue) {
-        try {
-          token = await refreshToken();
-          response = await fetch(url, {
-            ...options,
-            headers: {
-              ...options.headers,
-              Authorization: `Bearer ${token}`,
-            },
-          });
-        } catch {
-          return response;
-        }
-      }
-    }
-
-    return response;
-  };
 
   const fetchCategories = async () => {
     try {

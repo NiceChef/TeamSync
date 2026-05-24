@@ -52,6 +52,7 @@ import {
     toDateOnly,
 } from './eventUtils';
 import { API_URL, fetchWithAuth } from '../../api/authFetch';
+import { canManage as userCanManage } from '../../constants/roles';
 
 const EVENT_TYPES = [
     { value: 'meeting', label: 'Spotkanie' },
@@ -212,6 +213,9 @@ function EventForm({ initial, onClose, onSubmit }) {
 function cx(...parts) {
     return parts.filter(Boolean).join(' ');
 }
+
+// Stabilna pusta referencja dla komórek bez zdarzeń (unika nowej tablicy na render).
+const EMPTY_EVENTS = [];
 
 // Dane przeciągania kodują typ, by odróżnić wydarzenie od zadania: "event:12" / "task:34".
 function setDragData(e, kind, id) {
@@ -521,6 +525,19 @@ function WeekView({
         return days;
     }, [weekStart.getTime(), weekEnd.getTime()]);
 
+    // Indeks zdarzeń wg „dzień-godzina" — zamiast filtrować całą listę w każdej ze 168 komórek.
+    const eventsByDayHour = useMemo(() => {
+        const map = new Map();
+        for (const ev of events) {
+            const s = parseUTC(ev.start);
+            const key = `${s.toDateString()}-${getHours(s)}`;
+            const arr = map.get(key) ?? [];
+            arr.push(ev);
+            map.set(key, arr);
+        }
+        return map;
+    }, [events]);
+
     const handleDragOver = useCallback((e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -560,10 +577,7 @@ function WeekView({
                             {formatHourLabel(hour)}
                         </div>
                         {weekDays.map((day) => {
-                            const cellEvents = events.filter((ev) => {
-                                const s = parseUTC(ev.start);
-                                return isSameDay(s, day) && getHours(s) === hour;
-                            });
+                            const cellEvents = eventsByDayHour.get(`${day.toDateString()}-${hour}`) ?? EMPTY_EVENTS;
 
                             return (
                                 <div
@@ -657,6 +671,18 @@ function DayView({
         [events, currentDate],
     );
 
+    // Zdarzenia dnia pogrupowane po godzinie — bez filtrowania w każdej z 24 komórek.
+    const eventsByHour = useMemo(() => {
+        const map = new Map();
+        for (const ev of dayEvents) {
+            const h = getHours(parseUTC(ev.start));
+            const arr = map.get(h) ?? [];
+            arr.push(ev);
+            map.set(h, arr);
+        }
+        return map;
+    }, [dayEvents]);
+
     const handleDragOver = useCallback((e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -666,7 +692,7 @@ function DayView({
         <div className="max-h-[70vh] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
             <div className="grid grid-cols-[60px_1fr]">
                 {hours.map((hour) => {
-                    const cellEvents = dayEvents.filter((ev) => getHours(parseUTC(ev.start)) === hour);
+                    const cellEvents = eventsByHour.get(hour) ?? EMPTY_EVENTS;
 
                     return (
                         <div key={hour} className="contents">
@@ -786,7 +812,7 @@ export default function CalendarView({ isAuthenticated }) {
     const [me, setMe] = useState(null);
     const [formState, setFormState] = useState(null); // null | { initial }
 
-    const canManage = me ? me.role !== 'client' : false;
+    const canManage = userCanManage(me);
 
     const loadEvents = useCallback(async () => {
         try {

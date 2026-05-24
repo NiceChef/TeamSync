@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTasksContext } from '../context/TasksContext';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_URL, fetchWithAuth } from '../api/authFetch';
 
 function FilterView({ isAuthenticated }) {
   const navigate = useNavigate();
@@ -26,95 +25,6 @@ function FilterView({ isAuthenticated }) {
   const [localStatusFilter, setLocalStatusFilter] = useState(statusFilter);
   const [localNoCategories, setLocalNoCategories] = useState(noCategories);
 
-  const getAuthToken = () => {
-    return localStorage.getItem('access_token');
-  };
-
-  const refreshToken = async () => {
-    const refreshTokenValue = localStorage.getItem('refresh_token');
-    if (!refreshTokenValue) {
-      console.error('refreshToken: No refresh token available');
-      throw new Error('No refresh token available');
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${refreshTokenValue}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('refreshToken: Error response:', errorData);
-        if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user');
-          throw new Error('Refresh token expired or invalid');
-        }
-        throw new Error(errorData.error || 'Failed to refresh token');
-      }
-
-      const data = await response.json();
-      localStorage.setItem('access_token', data.access_token);
-      if (data.refresh_token) {
-        localStorage.setItem('refresh_token', data.refresh_token);
-      }
-      return data.access_token;
-    } catch (err) {
-      console.error('refreshToken: Exception:', err);
-      if (err.message.includes('Refresh token expired') || err.message.includes('invalid')) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-      }
-      throw err;
-    }
-  };
-
-  const fetchWithAuth = async (url, options = {}) => {
-    let token = getAuthToken();
-
-    if (!token) {
-      console.error('fetchWithAuth: No access token available');
-      throw new Error('No authentication token available');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (response.status === 401) {
-      const refreshTokenValue = localStorage.getItem('refresh_token');
-      if (refreshTokenValue) {
-        try {
-          token = await refreshToken();
-          return fetch(url, {
-            ...options,
-            headers: {
-              ...options.headers,
-              'Authorization': `Bearer ${token}`,
-            },
-          });
-        } catch (refreshError) {
-          console.error('fetchWithAuth: Token refresh failed:', refreshError);
-          return response;
-        }
-      } else {
-        console.error('fetchWithAuth: No refresh token available');
-      }
-    }
-
-    return response;
-  };
-
-  // Load categories
   const fetchCategories = async () => {
     try {
       const response = await fetchWithAuth(`${API_URL}/api/categories`);

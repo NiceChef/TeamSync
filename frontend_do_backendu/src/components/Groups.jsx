@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Building2, Plus, Search, ShieldAlert, UserPlus, Users } from 'lucide-react';
+import { isClient, canManage } from '../constants/roles';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -43,7 +44,7 @@ export default function Groups({ isAuthenticated }) {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (isAuthenticated && me && me.role !== 'client') loadGroups();
+    if (isAuthenticated && canManage(me)) loadGroups();
   }, [isAuthenticated, me, q]);
 
   const createGroup = async (e) => {
@@ -107,7 +108,7 @@ export default function Groups({ isAuthenticated }) {
   };
 
   if (!isAuthenticated) return null;
-  if (me?.role === 'client') {
+  if (isClient(me)) {
     return (
       <div className="mx-auto w-full max-w-3xl rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
         <div className="flex items-start gap-3">

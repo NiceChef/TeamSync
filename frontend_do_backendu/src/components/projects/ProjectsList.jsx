@@ -6,6 +6,7 @@ import { listProjects, createProject } from '../../api/projects';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { PROJECT_STATUSES, statusMeta, initials } from './projectUtils';
+import { canManage } from '../../constants/roles';
 
 function ProgressBar({ value }) {
     return (
@@ -198,7 +199,7 @@ export default function ProjectsList({ isAuthenticated }) {
 
     if (!isAuthenticated) return null;
 
-    const canCreate = me && me.role !== 'client';
+    const canCreate = canManage(me);
 
     return (
         <div className="mx-auto w-full max-w-6xl space-y-6">

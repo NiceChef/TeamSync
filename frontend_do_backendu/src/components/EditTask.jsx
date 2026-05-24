@@ -6,8 +6,10 @@ import { Card, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Field, FieldLabel, FieldError } from './ui/Field';
 import TextInput from './ui/TextInput';
 import Select from './ui/Select';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_URL, fetchWithAuth } from '../api/authFetch';
+import { isClient, canManage } from '../constants/roles';
+import { PRIORITY_OPTIONS } from '../constants/priorities';
+import { compressImage } from '../utils/image';
 
 function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onSaved }) {
   const params = useParams();
@@ -55,148 +57,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
   const [commentBody, setCommentBody] = useState('');
   const [meUser, setMeUser] = useState(null);
 
-  // Funkcje pomocnicze do autoryzacji
-  const getAuthToken = () => {
-    return localStorage.getItem('access_token');
-  };
-
-  const refreshToken = async () => {
-    const refreshTokenValue = localStorage.getItem('refresh_token');
-    if (!refreshTokenValue) {
-      console.error('refreshToken: No refresh token available');
-      throw new Error('No refresh token available');
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${refreshTokenValue}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('refreshToken: Error response:', errorData);
-        if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user');
-          throw new Error('Refresh token expired or invalid');
-        }
-        throw new Error(errorData.error || 'Failed to refresh token');
-      }
-
-      const data = await response.json();
-      localStorage.setItem('access_token', data.access_token);
-      if (data.refresh_token) {
-        localStorage.setItem('refresh_token', data.refresh_token);
-      }
-      return data.access_token;
-    } catch (err) {
-      console.error('refreshToken: Exception:', err);
-      if (err.message.includes('Refresh token expired') || err.message.includes('invalid')) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-      }
-      throw err;
-    }
-  };
-
-  const fetchWithAuth = async (url, options = {}) => {
-    let token = getAuthToken();
-
-    if (!token) {
-      console.error('fetchWithAuth: No access token available');
-      throw new Error('No authentication token available');
-    }
-
-    const headers = { ...options.headers, Authorization: `Bearer ${token}` };
-    if (options.body instanceof FormData) {
-      delete headers['Content-Type'];
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    if (response.status === 401) {
-      const refreshTokenValue = localStorage.getItem('refresh_token');
-      if (refreshTokenValue) {
-        try {
-          token = await refreshToken();
-          const h2 = { ...options.headers, Authorization: `Bearer ${token}` };
-          if (options.body instanceof FormData) {
-            delete h2['Content-Type'];
-          }
-          return fetch(url, {
-            ...options,
-            headers: h2,
-          });
-        } catch (refreshError) {
-          console.error('fetchWithAuth: Token refresh failed:', refreshError);
-          return response;
-        }
-      } else {
-        console.error('fetchWithAuth: No refresh token available');
-      }
-    }
-
-    return response;
-  };
-
-  // Funkcja kompresji obrazów
-  const compressImage = (file, maxWidth = 1920, maxHeight = 1080, quality = 0.75) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > maxWidth) {
-              height = (height * maxWidth) / width;
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxHeight) {
-              width = (width * maxHeight) / height;
-              height = maxHeight;
-            }
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              } else {
-                reject(new Error('Failed to compress image'));
-              }
-            },
-            'image/jpeg',
-            quality
-          );
-        };
-        img.onerror = reject;
-        img.src = e.target.result;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
 
   // Pobierz taska
   const fetchTask = async () => {
@@ -297,22 +157,26 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
   useEffect(() => {
     if (!isAuthenticated) return;
     (async () => {
-      const stRes = await fetchWithAuth(`${API_URL}/api/task-statuses`);
+      const [stRes, pRes, meRes] = await Promise.all([
+        fetchWithAuth(`${API_URL}/api/task-statuses`),
+        fetchWithAuth(`${API_URL}/api/projects`),
+        fetchWithAuth(`${API_URL}/api/auth/me`),
+      ]);
       if (stRes.ok) setTaskStatuses(await stRes.json());
-      const pRes = await fetchWithAuth(`${API_URL}/api/projects`);
       if (pRes.ok) setProjectsList(await pRes.json());
-      const meRes = await fetchWithAuth(`${API_URL}/api/auth/me`);
       if (!meRes.ok) return;
       const me = await meRes.json();
       setMeUser(me);
-      if (me.role === 'client') {
+      if (isClient(me)) {
         setAssignUsers([]);
         setGroupsList([]);
         return;
       }
-      const uRes = await fetchWithAuth(`${API_URL}/api/users`);
+      const [uRes, gRes] = await Promise.all([
+        fetchWithAuth(`${API_URL}/api/users`),
+        fetchWithAuth(`${API_URL}/api/groups`),
+      ]);
       if (uRes.ok) setAssignUsers(await uRes.json());
-      const gRes = await fetchWithAuth(`${API_URL}/api/groups`);
       if (gRes.ok) setGroupsList(await gRes.json());
     })();
   }, [isAuthenticated]);
@@ -967,9 +831,9 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
                 onChange={handleEditInputChange}
                 disabled={submitting}
               >
-                <option value="low">Niski</option>
-                <option value="medium">Średni</option>
-                <option value="high">Wysoki</option>
+                {PRIORITY_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
               </Select>
             </Field>
             <Field>
@@ -993,7 +857,7 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
                 ))}
               </Select>
             </Field>
-            {meUser && meUser.role !== 'client' && (
+            {canManage(meUser) && (
               <>
                 <Field>
                   <FieldLabel>Przypisany</FieldLabel>

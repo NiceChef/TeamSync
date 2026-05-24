@@ -26,6 +26,11 @@ function timeAgo(value) {
     return date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
 }
 
+function sameNotifications(a, b) {
+    if (a.length !== b.length) return false;
+    return a.every((n, i) => n.id === b[i].id && n.read === b[i].read);
+}
+
 export default function NotificationsBell() {
     const navigate = useNavigate();
     const [items, setItems] = useState([]);
@@ -36,7 +41,9 @@ export default function NotificationsBell() {
 
     const load = useCallback(async () => {
         try {
-            setItems(await listNotifications());
+            const next = await listNotifications();
+            // Polling co 60s — nie nadpisuj stanu (re-render), gdy nic się nie zmieniło.
+            setItems((prev) => (sameNotifications(prev, next) ? prev : next));
         } catch {
             /* cicho — powiadomienia są nieblokujące */
         }

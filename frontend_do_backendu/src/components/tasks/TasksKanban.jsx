@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { CalendarClock, GripVertical, Pencil, Trash2, UserRound } from 'lucide-react';
 import { formatDateOnly } from './taskUtils';
+import { priorityMeta } from '../../constants/priorities';
 
 const COLUMNS = [
     {
@@ -32,12 +33,6 @@ const COLUMNS = [
     },
 ];
 
-const PRIORITY_META = {
-    high: { label: 'Wysoki', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200' },
-    medium: { label: 'Średni', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200' },
-    low: { label: 'Niski', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
-};
-
 function columnCodeForTask(task) {
     const code = task.status?.code;
     if (code === 'in_progress' || code === 'done') return code;
@@ -45,7 +40,7 @@ function columnCodeForTask(task) {
 }
 
 function CardBody({ task, navigate, handleEdit, handleDeleteTask, dragHandle }) {
-    const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+    const prio = priorityMeta(task.priority);
     return (
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <div className="flex items-start gap-2">
@@ -70,7 +65,7 @@ function CardBody({ task, navigate, handleEdit, handleDeleteTask, dragHandle }) 
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prio.cls}`}>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prio.badgeClass}`}>
                     {prio.label}
                 </span>
                 {task.assignee?.username && (

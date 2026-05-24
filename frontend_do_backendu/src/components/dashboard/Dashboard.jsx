@@ -7,14 +7,7 @@ import {
 } from 'lucide-react';
 import StatCard from './StatCard';
 import { API_URL, fetchWithAuth } from '../../api/authFetch';
-
-const PRIORITY_BADGE = {
-    high: 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200',
-    medium: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200',
-    low: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-};
-
-const PRIORITY_LABEL = { high: 'Wysoki', medium: 'Średni', low: 'Niski' };
+import { priorityMeta } from '../../constants/priorities';
 
 const EVENT_BADGE = {
     meeting: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200',
@@ -157,7 +150,7 @@ export default function Dashboard() {
                     ) : (
                         <div className="space-y-3">
                             {recentTasks.map((task) => {
-                                const priority = task.priority || 'medium';
+                                const prio = priorityMeta(task.priority);
                                 return (
                                     <div
                                         key={task.id}
@@ -172,9 +165,9 @@ export default function Dashboard() {
                                             </p>
                                         </div>
                                         <span
-                                            className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_BADGE[priority] || PRIORITY_BADGE.medium}`}
+                                            className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${prio.badgeClass}`}
                                         >
-                                            {PRIORITY_LABEL[priority] || priority}
+                                            {prio.label}
                                         </span>
                                     </div>
                                 );

@@ -34,12 +34,7 @@ import { getProject } from '../../api/projects';
 import { useTaskDrawer } from '../../context/TaskDrawerContext';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
-
-const PRIORITY_META = {
-    high: { label: 'Wysoki', variant: 'danger' },
-    medium: { label: 'Średni', variant: 'warning' },
-    low: { label: 'Niski', variant: 'default' },
-};
+import { priorityMeta } from '../../constants/priorities';
 
 // Lustro walidacji backendu (config.MAX_UPLOAD_BYTES + whitelist w routes.upload_task_attachment).
 const MAX_UPLOAD_BYTES = 5_000_000;
@@ -234,7 +229,7 @@ export default function TaskDetail({ isAuthenticated }) {
         );
     }
 
-    const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+    const prio = priorityMeta(task.priority);
     const subtasks = relations
         .filter((r) => r.source_task_id === task.id)
         .map((r) => r.target_task)
