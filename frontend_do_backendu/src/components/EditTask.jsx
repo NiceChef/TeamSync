@@ -202,12 +202,12 @@ function EditTask({ isAuthenticated }) {
 
       if (!response.ok) {
         if (response.status === 404) {
-          setError('Task not found');
+          setError('Nie znaleziono zadania');
           navigate('/tasks');
           return;
         }
         if (response.status === 401) {
-          setError('Authentication failed. Please log in again.');
+          setError('Sesja wygasła. Zaloguj się ponownie.');
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user');
@@ -215,7 +215,7 @@ function EditTask({ isAuthenticated }) {
           return;
         }
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch task');
+        throw new Error(errorData.error || 'Nie udało się pobrać zadania');
       }
 
       const taskData = await response.json();
@@ -246,7 +246,7 @@ function EditTask({ isAuthenticated }) {
         version: taskData.version ?? 1,
       });
     } catch (err) {
-      setError(err.message || 'Failed to fetch task');
+      setError(err.message || 'Nie udało się pobrać zadania');
     } finally {
       setLoading(false);
     }
@@ -344,7 +344,7 @@ function EditTask({ isAuthenticated }) {
   const handleUpdateTask = async (e) => {
     e.preventDefault();
     if (!editingTask.topic.trim()) {
-      setError('Topic is required');
+      setError('Temat jest wymagany');
       return;
     }
 
@@ -413,7 +413,7 @@ function EditTask({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update task');
+        throw new Error(errorData.error || 'Nie udało się zaktualizować zadania');
       }
 
       const updated = await response.json();
@@ -470,7 +470,7 @@ function EditTask({ isAuthenticated }) {
       // Przekieruj do listy tasków z informacją o tasku do przewinięcia
       navigate('/tasks', { state: { scrollToTaskId: editingTask.id } });
     } catch (err) {
-      setError(err.message || 'Failed to update task');
+      setError(err.message || 'Nie udało się zaktualizować zadania');
     } finally {
       setSubmitting(false);
     }
@@ -568,7 +568,7 @@ function EditTask({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create subtask relation');
+        throw new Error(errorData.error || 'Nie udało się dodać podzadania');
       }
 
       await fetchTask();
@@ -578,12 +578,12 @@ function EditTask({ isAuthenticated }) {
       // Przekieruj do listy tasków z informacją o subtasku do przewinięcia
       navigate('/tasks', { state: { scrollToTaskId: parseInt(targetTaskId) } });
     } catch (err) {
-      setError(err.message || 'Failed to add subtask');
+      setError(err.message || 'Nie udało się dodać podzadania');
     }
   };
 
   const handleRemoveSubtaskRelation = async (taskId, relationId) => {
-    if (!window.confirm('Are you sure you want to remove this subtask?')) {
+    if (!window.confirm('Czy na pewno usunąć to podzadanie?')) {
       return;
     }
 
@@ -596,13 +596,13 @@ function EditTask({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to remove subtask relation');
+        throw new Error(errorData.error || 'Nie udało się usunąć podzadania');
       }
 
       await fetchTask();
       await fetchAllTasks();
     } catch (err) {
-      setError(err.message || 'Failed to remove subtask');
+      setError(err.message || 'Nie udało się usunąć podzadania');
     }
   };
 
@@ -746,7 +746,7 @@ function EditTask({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create parent relation');
+        throw new Error(errorData.error || 'Nie udało się dodać zadania nadrzędnego');
       }
 
       await fetchTask();
@@ -756,13 +756,13 @@ function EditTask({ isAuthenticated }) {
       // Przekieruj do listy tasków z informacją o tasku do przewinięcia
       navigate('/tasks', { state: { scrollToTaskId: parseInt(childTaskId) } });
     } catch (err) {
-      setError(err.message || 'Failed to add parent task');
+      setError(err.message || 'Nie udało się dodać zadania nadrzędnego');
     }
   };
 
   // Funkcja do usuwania parent taska
   const handleRemoveParentRelation = async (relationId) => {
-    if (!window.confirm('Are you sure you want to remove this parent task?')) {
+    if (!window.confirm('Czy na pewno usunąć zadanie nadrzędne?')) {
       return false;
     }
 
@@ -775,14 +775,14 @@ function EditTask({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to remove parent relation');
+        throw new Error(errorData.error || 'Nie udało się usunąć zadania nadrzędnego');
       }
 
       await fetchTask();
       await fetchAllTasks();
       return true;
     } catch (err) {
-      setError(err.message || 'Failed to remove parent task');
+      setError(err.message || 'Nie udało się usunąć zadania nadrzędnego');
       return false;
     }
   };

@@ -327,7 +327,7 @@ function CreateTask({ isAuthenticated }) {
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTask.topic.trim()) {
-      setError('Topic is required');
+      setError('Temat jest wymagany');
       return;
     }
 
@@ -402,7 +402,7 @@ function CreateTask({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create task');
+        throw new Error(errorData.error || 'Nie udało się utworzyć zadania');
       }
 
       const createdTask = await response.json();
@@ -472,7 +472,7 @@ function CreateTask({ isAuthenticated }) {
       // Przekieruj do listy tasków z informacją o tasku do przewinięcia
       navigate('/tasks', { state: { scrollToTaskId: createdTask.id } });
     } catch (err) {
-      setError(err.message || 'Failed to create task');
+      setError(err.message || 'Nie udało się utworzyć zadania');
     } finally {
       setSubmitting(false);
     }

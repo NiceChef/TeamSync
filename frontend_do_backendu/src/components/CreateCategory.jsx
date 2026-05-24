@@ -126,7 +126,7 @@ function CreateCategory({ isAuthenticated }) {
   const handleCreateCategory = async (e) => {
     e.preventDefault();
     if (!newCategory.name.trim()) {
-      setError('Category name is required');
+      setError('Nazwa kategorii jest wymagana');
       return;
     }
 
@@ -144,13 +144,13 @@ function CreateCategory({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create category');
+        throw new Error(errorData.error || 'Nie udało się utworzyć kategorii');
       }
 
       // Przekieruj do listy tasków
       navigate('/tasks');
     } catch (err) {
-      setError(err.message || 'Failed to create category');
+      setError(err.message || 'Nie udało się utworzyć kategorii');
     } finally {
       setSubmitting(false);
     }

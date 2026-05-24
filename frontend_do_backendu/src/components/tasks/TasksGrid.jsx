@@ -129,16 +129,16 @@ function TasksGrid({ isAuthenticated }) {
       if (!response.ok) {
         // This is a real HTTP error
         if (response.status === 401) {
-          setError('Authentication failed. Please log in again.');
+          setError('Sesja wygasła. Zaloguj się ponownie.');
           // Wyczyść localStorage
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user');
           // Nie przeładowuj strony automatycznie - pozwól użytkownikowi zobaczyć komunikat
         } else if (response.status >= 500) {
-          setError('Server error. Please try again later.');
+          setError('Błąd serwera. Spróbuj ponownie później.');
         } else {
-          setError('Failed to fetch tasks. Please try again.');
+          setError('Nie udało się pobrać zadań. Spróbuj ponownie.');
         }
         setTasks([]);
         setHierarchicalTasks([]);
@@ -169,7 +169,7 @@ function TasksGrid({ isAuthenticated }) {
         setLoading(false);
         return; // Wyjdź wcześnie, nie ustawiaj loading ponownie
       } else if (err.name === 'TypeError' && err.message.includes('fetch')) {
-        setError('Network error. Please check your connection.');
+        setError('Błąd sieci. Sprawdź połączenie.');
         setTasks([]);
         setHierarchicalTasks([]);
       } else {
@@ -469,13 +469,13 @@ function TasksGrid({ isAuthenticated }) {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update task');
+        throw new Error('Nie udało się zaktualizować zadania');
       }
 
       // Refresh tasks
       fetchTasks();
     } catch (err) {
-      setError(err.message || 'Failed to update task');
+      setError(err.message || 'Nie udało się zaktualizować zadania');
     }
   };
 
@@ -525,7 +525,7 @@ function TasksGrid({ isAuthenticated }) {
   };
 
   const handleDeleteTask = async (taskId) => {
-    if (!window.confirm('Are you sure you want to delete this task?')) {
+    if (!window.confirm('Czy na pewno usunąć to zadanie?')) {
       return;
     }
 
@@ -537,13 +537,13 @@ function TasksGrid({ isAuthenticated }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete task');
+        throw new Error(errorData.error || 'Nie udało się usunąć zadania');
       }
 
       // Refresh tasks
       fetchTasks();
     } catch (err) {
-      setError(err.message || 'Failed to delete task');
+      setError(err.message || 'Nie udało się usunąć zadania');
     }
   };
 
@@ -600,7 +600,7 @@ function TasksGrid({ isAuthenticated }) {
         });
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to remove category');
+          throw new Error(errorData.error || 'Nie udało się usunąć kategorii');
         }
 
         // If user confirmed, remove category from all subtasks that have it
@@ -661,7 +661,7 @@ function TasksGrid({ isAuthenticated }) {
         });
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to add category');
+          throw new Error(errorData.error || 'Nie udało się dodać kategorii');
         }
 
         // If user confirmed, assign category to all subtasks
@@ -687,7 +687,7 @@ function TasksGrid({ isAuthenticated }) {
       }
       fetchTasks(); // Refresh tasks to update categories
     } catch (err) {
-      setError(err.message || 'Failed to update task category');
+      setError(err.message || 'Nie udało się zaktualizować kategorii zadania');
     }
   };
 
@@ -696,7 +696,7 @@ function TasksGrid({ isAuthenticated }) {
       setError('');
       await exportTasksToJSON(fetchWithAuth);
     } catch (err) {
-      setError(err.message || 'Failed to export tasks');
+      setError(err.message || 'Nie udało się wyeksportować zadań');
     }
   };
 
@@ -705,7 +705,7 @@ function TasksGrid({ isAuthenticated }) {
       setError('');
       await exportTasksToXLSX(fetchWithAuth);
     } catch (err) {
-      setError(err.message || 'Failed to export tasks');
+      setError(err.message || 'Nie udało się wyeksportować zadań');
     }
   };
 
@@ -717,9 +717,9 @@ function TasksGrid({ isAuthenticated }) {
       const importedCount = await importTasksFromJSON(file, fetchWithAuth);
 
       await fetchTasks();
-      alert(`Successfully imported ${importedCount} task(s)`);
+      alert(`Zaimportowano zadań: ${importedCount}`);
     } catch (err) {
-      setError(err.message || 'Failed to import tasks');
+      setError(err.message || 'Nie udało się zaimportować zadań');
     } finally {
       setSubmitting(false);
     }
@@ -733,9 +733,9 @@ function TasksGrid({ isAuthenticated }) {
       const importedCount = await importTasksFromXLSX(file, fetchWithAuth);
 
       await fetchTasks();
-      alert(`Successfully imported ${importedCount} task(s)`);
+      alert(`Zaimportowano zadań: ${importedCount}`);
     } catch (err) {
-      setError(err.message || 'Failed to import tasks');
+      setError(err.message || 'Nie udało się zaimportować zadań');
     } finally {
       setSubmitting(false);
     }
@@ -752,7 +752,7 @@ function TasksGrid({ isAuthenticated }) {
     } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
       await importFromXLSX(file);
     } else {
-      setError('Unsupported file format. Please use .json or .xlsx files.');
+      setError('Nieobsługiwany format pliku. Użyj .json lub .xlsx.');
     }
 
     e.target.value = '';
