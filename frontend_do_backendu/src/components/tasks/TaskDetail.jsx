@@ -35,23 +35,8 @@ import { useTaskDrawer } from '../../context/TaskDrawerContext';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { priorityMeta } from '../../constants/priorities';
+import { MAX_UPLOAD_BYTES, ALLOWED_EXTENSIONS, validateAttachment } from '../../constants/attachments';
 
-// Lustro walidacji backendu (config.MAX_UPLOAD_BYTES + whitelist w routes.upload_task_attachment).
-const MAX_UPLOAD_BYTES = 5_000_000;
-const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.txt', '.doc', '.docx', '.xlsx', '.csv'];
-
-function validateAttachment(file) {
-    const dot = file.name.lastIndexOf('.');
-    const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return `Niedozwolony typ pliku. Dozwolone: ${ALLOWED_EXTENSIONS.join(', ')}.`;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-        const mb = (MAX_UPLOAD_BYTES / 1_000_000).toFixed(0);
-        return `Plik jest za duży (maks. ${mb} MB).`;
-    }
-    return null;
-}
 
 function formatDate(value) {
     if (!value) return '—';

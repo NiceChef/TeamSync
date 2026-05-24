@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Paperclip, Send } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Button from './ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Field, FieldLabel, FieldError } from './ui/Field';
@@ -10,6 +10,10 @@ import { API_URL, fetchWithAuth } from '../api/authFetch';
 import { isClient, canManage } from '../constants/roles';
 import { PRIORITY_OPTIONS } from '../constants/priorities';
 import { compressImage } from '../utils/image';
+import TaskCommentsCard from './tasks/edit/TaskCommentsCard';
+import TaskActivityCard from './tasks/edit/TaskActivityCard';
+import TaskAttachmentsCard from './tasks/edit/TaskAttachmentsCard';
+import TaskRelationsCard from './tasks/edit/TaskRelationsCard';
 
 function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onSaved }) {
   const params = useParams();
@@ -25,8 +29,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [categories, setCategories] = useState([]);
-  const [selectedSubtaskId, setSelectedSubtaskId] = useState('');
-  const [selectedParentTaskId, setSelectedParentTaskId] = useState('');
   const [tasks, setTasks] = useState([]);
   const editNotesRef = useRef(null);
 
@@ -54,7 +56,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
   const [comments, setComments] = useState([]);
   const [activities, setActivities] = useState([]);
   const [attachments, setAttachments] = useState([]);
-  const [commentBody, setCommentBody] = useState('');
   const [meUser, setMeUser] = useState(null);
 
 
@@ -358,40 +359,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
     if (atRes.ok) setAttachments(await atRes.json());
   };
 
-  const handleAddComment = async (e) => {
-    e.preventDefault();
-    if (!commentBody.trim() || !id) return;
-    const res = await fetchWithAuth(`${API_URL}/api/tasks/${id}/comments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body: commentBody.trim() }),
-    });
-    if (res.ok) {
-      setCommentBody('');
-      await refreshCommentSide();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      setError(err.error || 'Nie udało się dodać komentarza');
-    }
-  };
-
-  const handleUploadAttachment = async (ev) => {
-    const file = ev.target.files?.[0];
-    if (!file || !id) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetchWithAuth(`${API_URL}/api/tasks/${id}/attachments`, {
-      method: 'POST',
-      body: fd,
-    });
-    ev.target.value = '';
-    if (res.ok) await refreshCommentSide();
-    else {
-      const err = await res.json().catch(() => ({}));
-      setError(err.error || 'Upload nie powiódł się');
-    }
-  };
-
   const handleCancelEdit = () => {
     closeView();
   };
@@ -443,9 +410,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
 
       await fetchTask();
       await fetchAllTasks();
-      setSelectedSubtaskId('');
-
-      // Przekieruj do listy tasków z informacją o subtasku do przewinięcia
       finishSaved(parseInt(targetTaskId));
     } catch (err) {
       setError(err.message || 'Nie udało się dodać podzadania');
@@ -476,45 +440,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
     }
   };
 
-  const getAvailableTasksForSubtask = (parentTaskId) => {
-    if (!tasks || tasks.length === 0) return [];
-
-    const parentTask = tasks.find(t => t.id === parentTaskId);
-    if (!parentTask) return [];
-
-    // Funkcja pomocnicza do sprawdzania cykli
-    const wouldCreateCycle = (targetId, currentId, visited = new Set()) => {
-      if (visited.has(targetId)) return true;
-      if (targetId === currentId) return true;
-
-      visited.add(targetId);
-      const targetTask = tasks.find(t => t.id === targetId);
-      if (!targetTask || !targetTask.related_tasks) return false;
-
-      const outgoing = targetTask.related_tasks.outgoing || [];
-      for (const rel of outgoing) {
-        if (wouldCreateCycle(rel.target_task_id, currentId, visited)) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    return tasks.filter(t => {
-      // Nie można dodać siebie jako subtaska
-      if (t.id === parentTaskId) return false;
-
-      // Nie można dodać taska który już jest subtaskiem
-      const existingOutgoing = parentTask.related_tasks?.outgoing || [];
-      if (existingOutgoing.some(rel => rel.target_task_id === t.id)) return false;
-
-      // Nie można dodać taska który spowodowałby cykl
-      if (wouldCreateCycle(t.id, parentTaskId)) return false;
-
-      return true;
-    });
-  };
-
   if (loading) {
     return (
       <div className={drawer ? 'w-full' : 'mx-auto w-full max-w-4xl'}>
@@ -537,68 +462,7 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
 
   const outgoingRelations = editingTask.related_tasks?.outgoing || [];
   const incomingRelations = editingTask.related_tasks?.incoming || [];
-  const availableTasks = getAvailableTasksForSubtask(editingTask.id);
 
-  // Funkcja do pobierania dostępnych tasków jako parent tasków
-  const getAvailableTasksForParent = (childTaskId) => {
-    if (!tasks || tasks.length === 0) return [];
-
-    const childTask = tasks.find(t => t.id === childTaskId);
-    if (!childTask) return [];
-
-    // Funkcja pomocnicza do sprawdzania cykli
-    const wouldCreateCycle = (parentId, currentId, visited = new Set()) => {
-      if (visited.has(parentId)) return true;
-      if (parentId === currentId) return true;
-
-      visited.add(parentId);
-      const parentTask = tasks.find(t => t.id === parentId);
-      if (!parentTask || !parentTask.related_tasks) return false;
-
-      const outgoing = parentTask.related_tasks.outgoing || [];
-      for (const rel of outgoing) {
-        if (wouldCreateCycle(rel.target_task_id, currentId, visited)) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    // Funkcja pomocnicza do pobierania wszystkich parent tasków (rekurencyjnie)
-    const getAllParentIds = (taskId, visited = new Set()) => {
-      if (visited.has(taskId)) return visited;
-      visited.add(taskId);
-
-      const task = tasks.find(t => t.id === taskId);
-      if (!task || !task.related_tasks) return visited;
-
-      const incoming = task.related_tasks.incoming || [];
-      for (const rel of incoming) {
-        getAllParentIds(rel.source_task_id, visited);
-      }
-      return visited;
-    };
-
-    const excludeIds = new Set([childTaskId, ...getAllParentIds(childTaskId)]);
-
-    // Filtruj: nie można dodać siebie, swoich parentów, ani tasków które spowodowałyby cykl
-    return tasks.filter(task => {
-      // Nie można dodać siebie jako parenta
-      if (task.id === childTaskId) return false;
-      // Nie można dodać taska który już jest parentem
-      if (incomingRelations.some(rel => rel.source_task_id === task.id)) return false;
-      // Nie można dodać taska który spowodowałby cykl
-      if (wouldCreateCycle(task.id, childTaskId)) return false;
-      // Nie można dodać taska który jest już parentem (rekurencyjnie)
-      if (excludeIds.has(task.id)) return false;
-
-      return true;
-    });
-  };
-
-  const availableParentTasks = getAvailableTasksForParent(editingTask.id);
-
-  // Funkcja do dodawania parent taska
   const handleCreateParentRelation = async (parentTaskId, childTaskId) => {
     try {
       setError('');
@@ -621,9 +485,6 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
 
       await fetchTask();
       await fetchAllTasks();
-      setSelectedParentTaskId('');
-
-      // Przekieruj do listy tasków z informacją o tasku do przewinięcia
       finishSaved(parseInt(childTaskId));
     } catch (err) {
       setError(err.message || 'Nie udało się dodać zadania nadrzędnego');
@@ -965,265 +826,35 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
         </form>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Relacje</CardTitle>
-          <CardDescription>Zadanie nadrzędne i podzadania.</CardDescription>
-        </CardHeader>
+      <TaskRelationsCard
+        editingTaskId={editingTask.id}
+        tasks={tasks}
+        incomingRelations={incomingRelations}
+        outgoingRelations={outgoingRelations}
+        submitting={submitting}
+        onError={setError}
+        onAddSubtask={(targetId) => handleCreateSubtaskRelation(editingTask.id, targetId)}
+        onRemoveSubtask={(relId) => handleRemoveSubtaskRelation(editingTask.id, relId)}
+        onAddParent={(parentId) => handleCreateParentRelation(parentId, editingTask.id)}
+        onRemoveParent={(relId) => handleRemoveParentRelation(relId)}
+      />
 
-        <div className="space-y-6">
-          <div>
-            <FieldLabel>Zadanie nadrzędne</FieldLabel>
-            {incomingRelations.length > 0 && (
-              <div className="mb-3 space-y-2">
-                {incomingRelations.map(rel => {
-                  const parentTask = tasks.find(t => t.id === rel.source_task_id);
-                  return parentTask ? (
-                    <div
-                      key={rel.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-                    >
-                      <span className="text-slate-800 dark:text-slate-200">{parentTask.topic}</span>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleRemoveParentRelation(rel.id)}
-                        disabled={submitting}
-                      >
-                        Usuń
-                      </Button>
-                    </div>
-                  ) : null;
-                })}
-              </div>
-            )}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Select
-                id="parent-task-select"
-                value={selectedParentTaskId}
-                onChange={(e) => {
-                  setSelectedParentTaskId(e.target.value);
-                  setError('');
-                }}
-                disabled={submitting || availableParentTasks.length === 0}
-              >
-                <option value="">— Wybierz zadanie —</option>
-                {availableParentTasks.length === 0 ? (
-                  <option value="" disabled>Brak dostępnych zadań</option>
-                ) : (
-                  availableParentTasks.map(task => (
-                    <option key={task.id} value={task.id}>
-                      {task.topic} {task.completed ? '(zakończone)' : ''}
-                    </option>
-                  ))
-                )}
-              </Select>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={async () => {
-                  if (selectedParentTaskId) {
-                    if (incomingRelations.length > 0) {
-                      const oldRelation = incomingRelations[0];
-                      const removed = await handleRemoveParentRelation(oldRelation.id);
-                      if (removed) {
-                        await handleCreateParentRelation(selectedParentTaskId, editingTask.id);
-                      }
-                    } else {
-                      await handleCreateParentRelation(selectedParentTaskId, editingTask.id);
-                    }
-                  }
-                }}
-                disabled={submitting || !selectedParentTaskId || availableParentTasks.length === 0}
-              >
-                {incomingRelations.length > 0 ? 'Zmień' : 'Dodaj'}
-              </Button>
-            </div>
-            {availableParentTasks.length === 0 && (
-              <p className="mt-2 text-xs italic text-slate-500 dark:text-slate-400">
-                Wszystkie zadania są już powiązane albo utworzyłyby zapętloną relację.
-              </p>
-            )}
-          </div>
+      <TaskCommentsCard
+        taskId={id}
+        comments={comments}
+        onChanged={refreshCommentSide}
+        onError={setError}
+        disabled={submitting}
+      />
 
-          <div className="border-t border-slate-200 pt-6 dark:border-slate-800">
-            <FieldLabel>Podzadania</FieldLabel>
-            {outgoingRelations.length > 0 && (
-              <div className="mb-3 space-y-2">
-                {outgoingRelations.map(rel => {
-                  const subtask = tasks.find(t => t.id === rel.target_task_id);
-                  return subtask ? (
-                    <div
-                      key={rel.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-                    >
-                      <span className="text-slate-800 dark:text-slate-200">{subtask.topic}</span>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleRemoveSubtaskRelation(editingTask.id, rel.id)}
-                        disabled={submitting}
-                      >
-                        Usuń
-                      </Button>
-                    </div>
-                  ) : null;
-                })}
-              </div>
-            )}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Select
-                id="subtask-select"
-                value={selectedSubtaskId}
-                onChange={(e) => {
-                  setSelectedSubtaskId(e.target.value);
-                  setError('');
-                }}
-                disabled={submitting || availableTasks.length === 0}
-              >
-                <option value="">— Wybierz zadanie —</option>
-                {availableTasks.length === 0 ? (
-                  <option value="" disabled>Brak dostępnych zadań</option>
-                ) : (
-                  availableTasks.map(task => (
-                    <option key={task.id} value={task.id}>
-                      {task.topic} {task.completed ? '(zakończone)' : ''}
-                    </option>
-                  ))
-                )}
-              </Select>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => {
-                  if (selectedSubtaskId) {
-                    handleCreateSubtaskRelation(editingTask.id, selectedSubtaskId);
-                  }
-                }}
-                disabled={submitting || !selectedSubtaskId || availableTasks.length === 0}
-              >
-                Dodaj
-              </Button>
-            </div>
-            {availableTasks.length === 0 && (
-              <p className="mt-2 text-xs italic text-slate-500 dark:text-slate-400">
-                Wszystkie zadania są już powiązane albo utworzyłyby zapętloną relację.
-              </p>
-            )}
-          </div>
-        </div>
-      </Card>
+      <TaskActivityCard activities={activities} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Komentarze</CardTitle>
-        </CardHeader>
-        {comments.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">Brak komentarzy.</p>
-        ) : (
-          <ul className="space-y-2">
-            {comments.map((c) => (
-              <li
-                key={c.id}
-                className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    {c.author_username || 'Użytkownik'}
-                  </span>
-                  <span className="text-xs text-slate-400">{c.created_at}</span>
-                </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{c.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-        <form onSubmit={handleAddComment} className="mt-4 flex gap-2">
-          <TextInput
-            type="text"
-            value={commentBody}
-            onChange={(e) => setCommentBody(e.target.value)}
-            placeholder="Napisz komentarz..."
-          />
-          <Button type="submit" variant="primary" disabled={submitting || !commentBody.trim()}>
-            <Send className="h-4 w-4" />
-            Dodaj
-          </Button>
-        </form>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Historia aktywności</CardTitle>
-        </CardHeader>
-        {activities.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">Brak zarejestrowanej aktywności.</p>
-        ) : (
-          <ul className="max-h-56 space-y-2 overflow-auto">
-            {activities.map((a) => (
-              <li key={a.id} className="flex items-start gap-3 text-sm">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />
-                <span className="text-slate-600 dark:text-slate-300">
-                  <span className="font-medium text-slate-800 dark:text-slate-100">
-                    {a.username || 'Użytkownik'}
-                  </span>{' '}
-                  {a.action}
-                  <span className="ml-1 text-xs text-slate-400">· {a.created_at}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Załączniki</CardTitle>
-        </CardHeader>
-        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800">
-          <Paperclip className="h-4 w-4" />
-          Dodaj plik
-          <input type="file" className="hidden" onChange={handleUploadAttachment} />
-        </label>
-        {attachments.length > 0 && (
-          <ul className="mt-3 space-y-2">
-            {attachments.map((at) => (
-              <li
-                key={at.id}
-                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
-              >
-                <a
-                  href={`${API_URL}/api/attachments/${at.id}/download`}
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    const token = localStorage.getItem('access_token');
-                    const r = await fetch(`${API_URL}/api/attachments/${at.id}/download`, {
-                      headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (r.ok) {
-                      const blob = await r.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = at.original_name;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }
-                  }}
-                  className="flex min-w-0 items-center gap-2 text-sm text-indigo-600 hover:underline dark:text-indigo-300"
-                >
-                  <span className="min-w-0 truncate">{at.original_name}</span>
-                  <span className="shrink-0 text-xs text-slate-400">
-                    {Math.round((at.size_bytes || 0) / 1024)} KB
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <TaskAttachmentsCard
+        taskId={id}
+        attachments={attachments}
+        onChanged={refreshCommentSide}
+        onError={setError}
+      />
     </div>
   );
 }
