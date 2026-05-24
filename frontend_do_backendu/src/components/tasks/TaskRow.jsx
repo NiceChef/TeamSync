@@ -1,5 +1,6 @@
 import React from 'react';
 import { taskRowClassName } from './taskUtils';
+import { useTaskDrawer } from '../../context/TaskDrawerContext';
 
 export default function TaskRow({
     task,
@@ -12,6 +13,7 @@ export default function TaskRow({
     handleEdit,
     handleDeleteTask,
 }) {
+    const { openCreateTask } = useTaskDrawer();
     return (
         <React.Fragment>
             <tr
@@ -121,7 +123,7 @@ export default function TaskRow({
                         <button
                             type="button"
                             className="shrink-0 rounded-md border border-emerald-400 px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50 dark:border-emerald-500/50 dark:text-emerald-200 dark:hover:bg-emerald-500/10"
-                            onClick={() => navigate(`/tasks/new?parent_id=${task.id}`)}
+                            onClick={() => openCreateTask(task.id)}
                             title="Dodaj podzadanie"
                         >
                             + Podzadanie

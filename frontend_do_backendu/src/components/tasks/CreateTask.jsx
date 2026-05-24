@@ -9,9 +9,14 @@ import CreateTaskCategories from './create/CreateTaskCategories';
 import CreateTaskActions from './create/CreateTaskActions';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-function CreateTask({ isAuthenticated }) {
+function CreateTask({ isAuthenticated, drawer = false, parentId = null, onClose, onSaved }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  // W trybie drawer zamykanie/zapis idą przez callbacki zamiast nawigacji.
+  const closeView = () => (onClose ? onClose() : navigate('/tasks'));
+  const finishSaved = (taskId) =>
+    onSaved ? onSaved(taskId) : navigate('/tasks', { state: { scrollToTaskId: taskId } });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -19,8 +24,8 @@ function CreateTask({ isAuthenticated }) {
   const [tasks, setTasks] = useState([]);
   const addNotesRef = useRef(null);
 
-  // Get parent_id from URL if present
-  const parentIdFromUrl = searchParams.get('parent_id') || '';
+  // parent_id z propa (drawer) lub z URL (samodzielna trasa)
+  const parentIdFromUrl = parentId || searchParams.get('parent_id') || '';
 
   const [newTask, setNewTask] = useState({
     topic: '',
@@ -469,8 +474,7 @@ function CreateTask({ isAuthenticated }) {
         }
       }
 
-      // Przekieruj do listy tasków z informacją o tasku do przewinięcia
-      navigate('/tasks', { state: { scrollToTaskId: createdTask.id } });
+      finishSaved(createdTask.id);
     } catch (err) {
       setError(err.message || 'Nie udało się utworzyć zadania');
     } finally {
@@ -479,25 +483,27 @@ function CreateTask({ isAuthenticated }) {
   };
 
   const handleCancel = () => {
-    navigate('/tasks');
+    closeView();
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="bg-gradient-to-r from-indigo-600 to-purple-700 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-            Nowe zadanie
-          </h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Dodaj zadanie, ustaw daty, kategorię i relacje z innymi zadaniami.
-          </p>
-        </div>
+    <div className={drawer ? 'w-full space-y-6' : 'mx-auto w-full max-w-6xl space-y-6'}>
+      {!drawer && (
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="bg-gradient-to-r from-indigo-600 to-purple-700 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+              Nowe zadanie
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Dodaj zadanie, ustaw daty, kategorię i relacje z innymi zadaniami.
+            </p>
+          </div>
 
-        <Button onClick={() => navigate('/tasks')}>
-          Wróć do zadań
-        </Button>
-      </div>
+          <Button onClick={() => navigate('/tasks')}>
+            Wróć do zadań
+          </Button>
+        </div>
+      )}
 
       <FieldError>{error}</FieldError>
 

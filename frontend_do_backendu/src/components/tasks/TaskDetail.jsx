@@ -31,6 +31,7 @@ import {
     listRelations,
 } from '../../api/tasks';
 import { getProject } from '../../api/projects';
+import { useTaskDrawer } from '../../context/TaskDrawerContext';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 
@@ -152,6 +153,7 @@ function RelationLink({ task }) {
 export default function TaskDetail({ isAuthenticated }) {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { openEditTask, refreshSignal } = useTaskDrawer();
 
     const [task, setTask] = useState(null);
     const [projectName, setProjectName] = useState(null);
@@ -206,7 +208,7 @@ export default function TaskDetail({ isAuthenticated }) {
             active = false;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, id]);
+    }, [isAuthenticated, id, refreshSignal]);
 
     if (!isAuthenticated) return null;
 
@@ -345,7 +347,7 @@ export default function TaskDetail({ isAuthenticated }) {
                             ))}
                         </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => navigate(`/tasks/${task.id}/edit`)}>
+                    <Button variant="secondary" size="sm" onClick={() => openEditTask(task.id)}>
                         <Pencil className="h-4 w-4" />
                         Edytuj
                     </Button>

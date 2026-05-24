@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import TasksToolbar from './TasksToolbar';
 import ActiveTaskFilters from './ActiveTaskFilters';
 import { useTasksContext } from '../../context/TasksContext';
+import { useTaskDrawer } from '../../context/TaskDrawerContext';
 import TasksTable from './TasksTable';
 import TasksKanban from './TasksKanban';
 import { buildTaskHierarchy, formatDateOnly } from './taskUtils';
@@ -21,6 +22,7 @@ function TasksGrid({ isAuthenticated }) {
   const location = useLocation();
   const tasksContext = useTasksContext();
   const setTasksContext = tasksContext?.setContext;
+  const { openEditTask } = useTaskDrawer();
 
   // Get visibleColumns from context (persists across route changes)
   const visibleColumns = tasksContext?.visibleColumns || {
@@ -521,7 +523,7 @@ function TasksGrid({ isAuthenticated }) {
   };
 
   const handleEdit = (task) => {
-    navigate(`/tasks/${task.id}/edit`);
+    openEditTask(task.id);
   };
 
   const handleDeleteTask = async (taskId) => {

@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTasksContext } from '../context/TasksContext';
+import { useTaskDrawer } from '../context/TaskDrawerContext';
 
 const btnPrimary =
   'inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg px-4 text-sm font-semibold text-white shadow transition hover:-translate-y-px hover:shadow-md';
@@ -9,6 +10,7 @@ function HeaderButtons({ user, onLogout }) {
   const navigate = useNavigate();
   const location = useLocation();
   const tasksContext = useTasksContext();
+  const { openCreateTask } = useTaskDrawer();
 
   const showTaskHeader =
     tasksContext &&
@@ -62,7 +64,7 @@ function HeaderButtons({ user, onLogout }) {
 
       <button
         type="button"
-        onClick={() => navigate('/tasks/new')}
+        onClick={() => openCreateTask()}
         className={`${btnPrimary} bg-gradient-to-br from-teal-500 to-emerald-600`}
       >
         Dodaj zadanie

@@ -1,8 +1,8 @@
-import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
+import { useTaskDrawer } from '../../context/TaskDrawerContext';
 
 export default function TasksHeader() {
-    const navigate = useNavigate();
+    const { openCreateTask } = useTaskDrawer();
 
     return (
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -17,7 +17,7 @@ export default function TasksHeader() {
 
             <button
                 type="button"
-                onClick={() => navigate('/tasks/new')}
+                onClick={() => openCreateTask()}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:shadow-md"
             >
                 <Plus className="h-4 w-4" />

@@ -16,3 +16,7 @@
     @apply min-h-screen overflow-x-hidden w-full max-w-[100vw];
   }
 }
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

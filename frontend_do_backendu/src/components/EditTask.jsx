@@ -9,9 +9,15 @@ import Select from './ui/Select';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-function EditTask({ isAuthenticated }) {
-  const { id } = useParams();
+function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onSaved }) {
+  const params = useParams();
+  const id = taskId ?? params.id;
   const navigate = useNavigate();
+
+  // W trybie drawer zamykanie/zapis idą przez callbacki zamiast nawigacji.
+  const closeView = () => (onClose ? onClose() : navigate('/tasks'));
+  const finishSaved = (savedId) =>
+    onSaved ? onSaved(savedId) : navigate('/tasks', { state: { scrollToTaskId: savedId } });
   const [task, setTask] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -203,7 +209,7 @@ function EditTask({ isAuthenticated }) {
       if (!response.ok) {
         if (response.status === 404) {
           setError('Nie znaleziono zadania');
-          navigate('/tasks');
+          closeView();
           return;
         }
         if (response.status === 401) {
@@ -468,7 +474,7 @@ function EditTask({ isAuthenticated }) {
       }
 
       // Przekieruj do listy tasków z informacją o tasku do przewinięcia
-      navigate('/tasks', { state: { scrollToTaskId: editingTask.id } });
+      finishSaved(editingTask.id);
     } catch (err) {
       setError(err.message || 'Nie udało się zaktualizować zadania');
     } finally {
@@ -523,7 +529,7 @@ function EditTask({ isAuthenticated }) {
   };
 
   const handleCancelEdit = () => {
-    navigate('/tasks');
+    closeView();
   };
 
   // ✅ Tylko aktualizuj lokalny stan - nie wysyłaj requestu do backendu
@@ -576,7 +582,7 @@ function EditTask({ isAuthenticated }) {
       setSelectedSubtaskId('');
 
       // Przekieruj do listy tasków z informacją o subtasku do przewinięcia
-      navigate('/tasks', { state: { scrollToTaskId: parseInt(targetTaskId) } });
+      finishSaved(parseInt(targetTaskId));
     } catch (err) {
       setError(err.message || 'Nie udało się dodać podzadania');
     }
@@ -647,7 +653,7 @@ function EditTask({ isAuthenticated }) {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-4xl">
+      <div className={drawer ? 'w-full' : 'mx-auto w-full max-w-4xl'}>
         <div className="h-40 animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50" />
       </div>
     );
@@ -655,8 +661,8 @@ function EditTask({ isAuthenticated }) {
 
   if (!task) {
     return (
-      <div className="mx-auto w-full max-w-4xl space-y-4">
-        <Button variant="ghost" onClick={() => navigate('/tasks')}>
+      <div className={drawer ? 'w-full space-y-4' : 'mx-auto w-full max-w-4xl space-y-4'}>
+        <Button variant="ghost" onClick={closeView}>
           <ArrowLeft className="h-4 w-4" />
           Wróć do zadań
         </Button>
@@ -754,7 +760,7 @@ function EditTask({ isAuthenticated }) {
       setSelectedParentTaskId('');
 
       // Przekieruj do listy tasków z informacją o tasku do przewinięcia
-      navigate('/tasks', { state: { scrollToTaskId: parseInt(childTaskId) } });
+      finishSaved(parseInt(childTaskId));
     } catch (err) {
       setError(err.message || 'Nie udało się dodać zadania nadrzędnego');
     }
@@ -788,21 +794,23 @@ function EditTask({ isAuthenticated }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="bg-gradient-to-r from-indigo-600 to-purple-700 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-            Edytuj zadanie
-          </h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Zmień szczegóły, status i relacje; zarządzaj komentarzami oraz załącznikami.
-          </p>
+    <div className={drawer ? 'w-full space-y-6' : 'mx-auto w-full max-w-4xl space-y-6'}>
+      {!drawer && (
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="bg-gradient-to-r from-indigo-600 to-purple-700 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+              Edytuj zadanie
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Zmień szczegóły, status i relacje; zarządzaj komentarzami oraz załącznikami.
+            </p>
+          </div>
+          <Button onClick={() => navigate('/tasks')}>
+            <ArrowLeft className="h-4 w-4" />
+            Wróć do zadań
+          </Button>
         </div>
-        <Button onClick={() => navigate('/tasks')}>
-          <ArrowLeft className="h-4 w-4" />
-          Wróć do zadań
-        </Button>
-      </div>
+      )}
 
       <FieldError>{error}</FieldError>
 
