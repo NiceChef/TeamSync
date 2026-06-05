@@ -1,0 +1,79 @@
+# Pełny stack development: PostgreSQL + Flask backend + React/Vite frontend.
+#
+# Uruchomienie (Mac i Windows tak samo):
+#   docker compose up -d --build
+#
+# Porty hosta są konfigurowalne przez zmienne (plik .env obok tego pliku, gitignored).
+# Domyślne wartości (gdy brak .env): 5432 / 5000 / 5173 — działają na czystym Windowsie.
+# Na maszynach z zajętymi portami (np. lokalny Postgres, macOS AirPlay) ustaw .env.
+#
+#   POSTGRES_HOST_PORT, BACKEND_HOST_PORT, FRONTEND_HOST_PORT
+#
+# Komunikacja między kontenerami idzie po nazwach serwisów w sieci 'default'
+# (backend -> postgres:5432). Przeglądarka łączy się z backendem po porcie hosta,
+# dlatego VITE_API_URL wskazuje http://localhost:${BACKEND_HOST_PORT}.
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tasks-postgres-dev
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - tasks_pg_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasks_dev -d tasks_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: tasks-backend-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Dev: uruchom jako root, żeby zapis do bind-mountowanych uploadów działał
+    # niezależnie od UID hosta (Mac/Windows/Linux).
+    user: root
+    environment:
+      SECRET_KEY: dev-secret-key-change-for-training
+      JWT_SECRET_KEY: dev-jwt-secret-change-for-training
+      FLASK_ENV: development
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: "5000"
+      # Wewnątrz sieci compose baza jest pod hostem 'postgres' (zawsze 5432).
+      SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://tasks_dev:tasks_dev_secret@postgres:5432/tasks_dev
+    ports:
+      - "${BACKEND_HOST_PORT:-5000}:5000"
+    volumes:
+      # Bind-mount kodu = hot-reload (Flask debug). node-style dla Pythona.
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: tasks-frontend-dev
+    depends_on:
+      - backend
+    environment:
+      # URL widziany przez przeglądarkę (host), nie przez kontener.
+      VITE_API_URL: "http://localhost:${BACKEND_HOST_PORT:-5000}"
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      # Anonimowy wolumen chroni node_modules z obrazu przed nadpisaniem bind-mountem.
+      - /app/node_modules
+
+volumes:
+  tasks_pg_dev_data:

@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply overflow-x-hidden w-full max-w-[100vw];
+  }
+
+  body {
+    @apply m-0 min-w-[320px] min-h-screen bg-slate-100 text-slate-900 overflow-x-hidden w-full max-w-[100vw] antialiased dark:bg-slate-950 dark:text-slate-100;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  #root {
+    @apply min-h-screen overflow-x-hidden w-full max-w-[100vw];
+  }
+}
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="letterGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f0f4ff;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle with gradient -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGrad)"/>
+  
+  <!-- Letter T -->
+  <g transform="translate(256, 256)">
+    <!-- Vertical line of T -->
+    <rect x="-20" y="-140" width="40" height="280" rx="20" fill="url(#letterGrad)"/>
+    <!-- Horizontal line of T -->
+    <rect x="-120" y="-140" width="240" height="40" rx="20" fill="url(#letterGrad)"/>
+  </g>
+  
+  <!-- Small decorative checkmark in corner -->
+  <circle cx="380" cy="140" r="24" fill="#10b981"/>
+  <path d="M 370 140 L 375 145 L 390 130" stroke="white" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Small star decoration -->
+  <circle cx="140" cy="140" r="20" fill="#f59e0b"/>
+  <path d="M 140 125 L 142 135 L 152 135 L 144 142 L 148 152 L 140 147 L 132 152 L 136 142 L 128 135 L 138 135 Z" fill="white"/>
+</svg>
