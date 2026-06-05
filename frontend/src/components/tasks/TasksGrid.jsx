@@ -9,9 +9,10 @@ import { useTaskListScroll } from '../../hooks/useTaskListScroll';
 import TasksTable from './TasksTable';
 import TasksKanban from './TasksKanban';
 import { buildTaskHierarchy, formatDateOnly } from './taskUtils';
-import { LayoutGrid, Table2 } from 'lucide-react';
+import { LayoutGrid, Table2, Trash2 } from 'lucide-react';
 import { API_URL, fetchWithAuth } from '../../api/authFetch';
 import TasksHeader from './TasksHeader';
+import Button from '../ui/Button';
 import {
   exportTasksToJSON,
   exportTasksToXLSX,
@@ -43,6 +44,7 @@ function TasksGrid({ isAuthenticated }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [taskToDeleteId, setTaskToDeleteId] = useState(null);
   // Filters are now managed via context and FilterView component
   const selectedCategoryFilters = useMemo(
     () => tasksContext?.selectedCategoryFilters || [],
@@ -345,10 +347,13 @@ function TasksGrid({ isAuthenticated }) {
     openEditTask(task.id);
   };
 
-  const handleDeleteTask = async (taskId) => {
-    if (!window.confirm('Czy na pewno usunąć to zadanie?')) {
-      return;
-    }
+  const handleDeleteTaskClick = (taskId) => {
+    setTaskToDeleteId(taskId);
+  };
+
+  const handleConfirmDeleteTask = async () => {
+    const taskId = taskToDeleteId;
+    setTaskToDeleteId(null); 
 
     try {
       setError('');
@@ -361,7 +366,6 @@ function TasksGrid({ isAuthenticated }) {
         throw new Error(errorData.error || 'Nie udało się usunąć zadania');
       }
 
-      // Refresh tasks
       fetchTasks();
     } catch (err) {
       setError(err.message || 'Nie udało się usunąć zadania');
@@ -514,12 +518,16 @@ function TasksGrid({ isAuthenticated }) {
   const shouldShowError = error && !(!loading && tasks.length === 0 && hierarchicalTasks.length === 0);
 
   if (loading) {
-    return (
-      <div className="w-full rounded-xl bg-white p-8 text-center text-slate-600 shadow-md">
-        <p>Ładowanie zadań…</p>
-      </div>
-    );
-  }
+  return (
+    <div className="w-full rounded-2xl bg-white py-16 px-4 text-center shadow-sm border border-slate-200 dark:bg-slate-900 dark:border-slate-800 flex flex-col items-center justify-center gap-3">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600 dark:border-slate-800 dark:border-t-indigo-500" />
+      
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 animate-pulse">
+        Przygotowywanie zadań...
+      </p>
+    </div>
+  );
+}
 
   return (
     <div className="w-full rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/95 sm:p-6">
@@ -606,7 +614,7 @@ function TasksGrid({ isAuthenticated }) {
           onMove={moveTaskStatus}
           navigate={navigate}
           handleEdit={handleEdit}
-          handleDeleteTask={handleDeleteTask}
+          handleDeleteTask={handleDeleteTaskClick}
         />
       ) : (
         <TasksTable
@@ -618,9 +626,54 @@ function TasksGrid({ isAuthenticated }) {
           toggleComplete={toggleComplete}
           navigate={navigate}
           handleEdit={handleEdit}
-          handleDeleteTask={handleDeleteTask}
+          handleDeleteTask={handleDeleteTaskClick}
         />
       )}
+
+      {taskToDeleteId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+          <div 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity pointer-events-auto"
+            onClick={() => setTaskToDeleteId(null)}
+          />
+          
+          <div className="relative z-10 my-auto w-full max-w-md transform overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 text-left align-middle shadow-xl transition-all dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <h3 className="text-lg font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                Usunąć zadanie?
+              </h3>
+            </div>
+            
+            <div className="mt-3">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Czy na pewno chcesz bezpowrotnie usunąć to zadanie? Tej akcji nie będzie można cofnąć.
+              </p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setTaskToDeleteId(null)}
+              >
+                Anuluj
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleConfirmDeleteTask}
+                className="bg-red-600 hover:bg-red-500 text-white border-none dark:bg-red-600 dark:hover:bg-red-500"
+              >
+                Usuń zadanie
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

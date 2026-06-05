@@ -291,6 +291,7 @@ export default function ProjectDetail({ isAuthenticated }) {
     const [error, setError] = useState('');
     const [editing, setEditing] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
     const load = async () => {
         setError('');
@@ -339,10 +340,12 @@ export default function ProjectDetail({ isAuthenticated }) {
     const isOwner = me && me.id === project.created_by_id;
     const tasks = project.tasks || [];
 
-    const handleDelete = async () => {
-        if (!window.confirm(`Usunąć projekt „${project.name}"? Zadania zostaną odpięte, nie usunięte.`)) {
-            return;
-        }
+    const handleDeleteClick = () => {
+        setIsDeleteModalOpen(true);
+    }
+
+    const handleConfirmDelete = async () => {
+        setIsDeleteModalOpen(false);
         setDeleting(true);
         try {
             await deleteProject(project.id);
@@ -393,7 +396,7 @@ export default function ProjectDetail({ isAuthenticated }) {
                                     <Button
                                         variant="danger"
                                         size="sm"
-                                        onClick={handleDelete}
+                                        onClick={handleDeleteClick}
                                         disabled={deleting}
                                     >
                                         <Trash2 className="h-4 w-4" />
@@ -435,6 +438,51 @@ export default function ProjectDetail({ isAuthenticated }) {
                     }
                 />
             </div>
+
+            {isDeleteModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+                    <div 
+                        className="fixed inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity pointer-events-auto"
+                        onClick={() => setIsDeleteModalOpen(false)}
+                    />
+                    
+                    <div className="relative z-10 my-auto w-full max-w-md transform overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 text-left align-middle shadow-xl transition-all dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                                <Trash2 className="h-5 w-5" />
+                            </div>
+                            <h3 className="text-lg font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                                Usunąć projekt?
+                            </h3>
+                        </div>
+                        
+                        <div className="mt-3">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Czy na pewno chcesz usunąć projekt <span className="font-semibold text-slate-900 dark:text-slate-100">„{project.name}”</span>? Zadania zostaną odpięte, nie usunięte.
+                            </p>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setIsDeleteModalOpen(false)}
+                            >
+                                Anuluj
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="primary"
+                                onClick={handleConfirmDelete}
+                                className="bg-red-600 hover:bg-red-500 text-white border-none dark:bg-red-600 dark:hover:bg-red-500"
+                            >
+                                Usuń projekt
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

@@ -467,6 +467,7 @@ function MonthView({
                                             e.stopPropagation();
                                             onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
                                         }}
+                                        
                                         className={cx(
                                             'flex w-full cursor-grab items-center gap-1 rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-tight transition-colors hover:opacity-80 active:cursor-grabbing',
                                             EVENT_CHIP[ev.event_type || 'meeting'],
@@ -815,6 +816,7 @@ export default function CalendarView({ isAuthenticated }) {
     const [selectedEvent, setSelectedEvent] = useState(null);
     const me = useMe();
     const [formState, setFormState] = useState(null); // null | { initial }
+    const [eventToDelete, setEventToDelete] = useState(null);
 
     const canManage = userCanManage(me);
 
@@ -894,19 +896,22 @@ export default function CalendarView({ isAuthenticated }) {
         [formState, loadEvents],
     );
 
-    const handleDeleteEvent = useCallback(
-        async (event) => {
-            if (!window.confirm(`Usunąć wydarzenie „${event.title}"?`)) return;
-            setSelectedEvent(null);
-            try {
-                await deleteEvent(event.id);
-                setEvents((curr) => curr.filter((e) => e.id !== event.id));
-            } catch (err) {
-                setError(err.message || 'Nie udało się usunąć wydarzenia.');
-            }
-        },
-        [],
-    );
+    const handleDeleteEventClick = useCallback((event) => {
+        setEventToDelete(event);
+    }, []);
+
+    const handleConfirmDeleteEvent = useCallback(async () => {
+        if (!eventToDelete) return;
+        const targetEvent = eventToDelete;
+        setEventToDelete(null);
+        setSelectedEvent(null);
+        try {
+            await deleteEvent(targetEvent.id);
+            setEvents((curr) => curr.filter((e) => e.id !== targetEvent.id));
+        } catch (err) {
+            setError(err.message || 'Nie udało się usunąć wydarzenia.');
+        }
+    }, [eventToDelete]);
 
     const handleDropTask = useCallback(
         (taskId, targetDate) => {
@@ -1102,8 +1107,12 @@ export default function CalendarView({ isAuthenticated }) {
             </div>
 
             {loading ? (
-                <div className="flex h-96 items-center justify-center rounded-lg border border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                    Ładowanie wydarzeń…
+                <div className="flex h-96 flex-col items-center justify-center gap-3 rounded-lg border border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-600 dark:border-slate-800 dark:border-t-indigo-400" />
+            
+                    <span className="text-sm font-medium animate-pulse">
+                        Ładowanie wydarzeń…
+                    </span>
                 </div>
             ) : (
                 <>
@@ -1121,7 +1130,7 @@ export default function CalendarView({ isAuthenticated }) {
                             onSelectTask={handleSelectTask}
                             canManage={canManage}
                             onEditEvent={openEdit}
-                            onDeleteEvent={handleDeleteEvent}
+                            onDeleteEvent={handleDeleteEventClick}
                         />
                     )}
                     {view === 'week' && (
@@ -1134,7 +1143,7 @@ export default function CalendarView({ isAuthenticated }) {
                             onSelectEvent={setSelectedEvent}
                             canManage={canManage}
                             onEditEvent={openEdit}
-                            onDeleteEvent={handleDeleteEvent}
+                            onDeleteEvent={handleDeleteEventClick}
                         />
                     )}
                     {view === 'day' && (
@@ -1147,7 +1156,7 @@ export default function CalendarView({ isAuthenticated }) {
                             onSelectEvent={setSelectedEvent}
                             canManage={canManage}
                             onEditEvent={openEdit}
-                            onDeleteEvent={handleDeleteEvent}
+                            onDeleteEvent={handleDeleteEventClick}
                         />
                     )}
                 </>
@@ -1159,6 +1168,49 @@ export default function CalendarView({ isAuthenticated }) {
                     onClose={() => setFormState(null)}
                     onSubmit={handleSubmitForm}
                 />
+            )}
+
+            {eventToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+                    <div 
+                        className="fixed inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity pointer-events-auto"
+                        onClick={() => setEventToDelete(null)}
+                    />
+                    
+                    <div className="relative z-10 my-auto w-full max-w-md transform overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 text-left align-middle shadow-xl transition-all dark:border-slate-800 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                                <Trash2 className="h-5 w-5" />
+                            </div>
+                            <h3 className="text-lg font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                                Usunąć wydarzenie?
+                            </h3>
+                        </div>
+                        
+                        <div className="mt-3">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Czy na pewno chcesz usunąć wydarzenie <span className="font-semibold text-slate-900 dark:text-slate-100">„{eventToDelete.title}”</span>? Tej operacji nie można cofnąć.
+                            </p>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setEventToDelete(null)}
+                                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                Anuluj
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmDeleteEvent}
+                                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-500"
+                            >
+                                Usuń
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">

@@ -4,11 +4,15 @@ import { LogOut, Menu, Moon, Sun, User } from 'lucide-react';
 import { navItemsForRole } from './navItems';
 import NotificationsBell from '../notifications/NotificationsBell';
 import GlobalSearch from '../search/GlobalSearch';
+import Button from '../ui/Button';
+
+
 
 export default function Topbar({ user, onLogout }) {
     const navigate = useNavigate();
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const [theme, setTheme] = useState(() => {
         return localStorage.getItem('teamsync-theme') || 'light';
     });
@@ -31,11 +35,13 @@ export default function Topbar({ user, onLogout }) {
     };
 
     const handleLogoutClick = () => {
-        const confirmed = window.confirm('Czy na pewno chcesz się wylogować?');
-        if (confirmed) {
-            onLogout();
-        }
+        setIsLogoutModalOpen(true)
     };
+
+    const handleConfirmLogout = () => {
+        setIsLogoutModalOpen(false);
+        onLogout();
+    }
 
     return (
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
@@ -119,6 +125,51 @@ export default function Topbar({ user, onLogout }) {
                     </button>
                 </div>
             </div>
+
+            {isLogoutModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 mt-13">
+                    <div 
+                        className="fixed inset-0 bg-slate-900/40"
+                        onClick={() => setIsLogoutModalOpen(false)}
+                    />
+                    
+                    <div className="relative my-auto w-full max-w-md transform overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 text-left align-middle shadow-xl transition-all dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                                <LogOut className="h-5 w-5" />
+                            </div>
+                            <h3 className="text-lg font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                                Potwierdź wylogowanie
+                            </h3>
+                        </div>
+                        
+                        <div className="mt-3">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Czy na pewno chcesz się wylogować?
+                            </p>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setIsLogoutModalOpen(false)}
+                            >
+                                Anuluj
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="primary"
+                                onClick={handleConfirmLogout}
+                                className="bg-red-600 hover:bg-red-500 text-white border-none dark:bg-red-600 dark:hover:bg-red-500"
+                            >
+                                Wyloguj się
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </header>
     );
 }
