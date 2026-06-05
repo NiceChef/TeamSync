@@ -396,11 +396,15 @@ function MonthView({
                                 !inMonth && 'bg-slate-50 dark:bg-slate-950/40',
                                 today && 'bg-indigo-50/60 dark:bg-indigo-500/5',
                                 canManage && 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/30',
+                                '[&.drag-over]:bg-indigo-50/70 [&.drag-over]:border-2 [&.drag-over]:border-dashed [&.drag-over]:border-indigo-500 dark:[&.drag-over]:bg-indigo-500/10'
                             )}
                             onClick={() => (canManage ? onCreateAt(day) : onSelectDay(day))}
+                            onDragEnter={(e) => canManage && e.target === e.currentTarget && e.currentTarget.classList.add('drag-over')}
+                            onDragLeave={(e) => e.target === e.currentTarget && e.currentTarget.classList.remove('drag-over')}
                             onDragOver={handleDragOver}
                             onDrop={(e) => {
                                 e.preventDefault();
+                                e.currentTarget.classList.remove('drag-over');
                                 const { kind, id } = getDragData(e);
                                 if (!id) return;
                                 if (kind === 'task') onDropTask(id, day);
@@ -451,7 +455,7 @@ function MonthView({
                                             onSelectTask(t.id);
                                         }}
                                         title={`Zadanie: ${t.topic} — przeciągnij, aby zmienić termin`}
-                                        className="flex w-full cursor-grab items-center gap-1 rounded border border-dashed border-slate-300 bg-slate-50 px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-slate-600 transition hover:border-indigo-400 hover:text-indigo-600 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                        className="flex w-full cursor-grab items-center gap-1 rounded border border-dashed border-slate-300 bg-white px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-slate-600 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm hover:border-indigo-400 hover:text-indigo-600 active:cursor-grabbing active:translate-y-0 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                                     >
                                         <CheckSquare className="h-2.5 w-2.5 shrink-0 opacity-60" />
                                         <span className="truncate">{t.topic}</span>
@@ -468,7 +472,7 @@ function MonthView({
                                             onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
                                         }}
                                         className={cx(
-                                            'flex w-full cursor-grab items-center gap-1 rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-tight transition-colors hover:opacity-80 active:cursor-grabbing',
+                                            'flex w-full cursor-grab items-center gap-1 rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-tight transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm hover:opacity-95 active:cursor-grabbing active:translate-y-0',
                                             EVENT_CHIP[ev.event_type || 'meeting'],
                                         )}
                                     >
@@ -620,7 +624,7 @@ function WeekView({
                                                     onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
                                                 }}
                                                 className={cx(
-                                                    'absolute left-0.5 right-0.5 cursor-grab overflow-hidden rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-tight active:cursor-grabbing',
+                                                    'absolute left-0.5 right-0.5 cursor-grab overflow-hidden rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-tight transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:z-10 active:cursor-grabbing active:translate-y-0',
                                                     EVENT_CHIP[ev.event_type || 'meeting'],
                                                 )}
                                                 style={{
@@ -692,84 +696,114 @@ function DayView({
         e.dataTransfer.dropEffect = 'move';
     }, []);
 
-    return (
-        <div className="max-h-[70vh] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
-            <div className="grid grid-cols-[60px_1fr]">
-                {hours.map((hour) => {
-                    const cellEvents = eventsByHour.get(hour) ?? EMPTY_EVENTS;
+    const hasEvents = dayEvents.length > 0;
 
-                    return (
-                        <div key={hour} className="contents">
-                            <div className="flex h-16 items-start justify-end border-b border-r border-slate-200 pr-2 pt-1 text-xs text-slate-400 dark:border-slate-800">
-                                {formatHourLabel(hour)}
-                            </div>
-                            <div
-                                className={cx(
-                                    'relative h-16 border-b border-slate-200 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40',
-                                    canManage && 'cursor-pointer',
-                                )}
-                                onClick={() => canManage && onCreateAt(setHours(setMinutes(currentDate, 0), hour))}
-                                onDragOver={handleDragOver}
-                                onDrop={(e) => {
-                                    e.preventDefault();
-                                    const { kind, id } = getDragData(e);
-                                    if (id && kind === 'event') {
-                                        const target = setHours(setMinutes(currentDate, 0), hour);
-                                        onDropEvent(id, target);
-                                    }
-                                }}
-                            >
-                                {cellEvents.map((ev) => {
-                                    const s = parseUTC(ev.start);
-                                    const eEnd = parseUTC(ev.end);
-                                    const duration = Math.max(differenceInMinutes(eEnd, s), 15);
-                                    const topOffset = getMinutes(s);
-                                    const heightPx = Math.min((duration / 60) * 64, 128);
+return (
+        <div className="space-y-4">
+            {!hasEvents && (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900/50">
+                    <div className="rounded-full bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                        <CalendarDays className="h-6 w-6" />
+                    </div>
+                    <h4 className="mt-3 text-sm font-semibold text-slate-950 dark:text-slate-100">
+                        Czyste konto na dziś!
+                    </h4>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-xs">
+                        Nie masz zaplanowanych żadnych spotkań ani zadań na ten dzień.
+                    </p>
+                    {canManage && (
+                        <button
+                            type="button"
+                            onClick={() => onCreateAt(setHours(setMinutes(currentDate, 0), 9))}
+                            className="mt-4 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        >
+                            + Dodaj wydarzenie
+                        </button>
+                    )}
+                </div>
+            )}
 
-                                    return (
-                                        <button
-                                            key={ev.id}
-                                            type="button"
-                                            draggable
-                                            onDragStart={(e) => setDragData(e, 'event', ev.id)}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
-                                            }}
-                                            className={cx(
-                                                'absolute left-1 right-1 cursor-grab rounded border px-2 py-1 text-left text-xs font-medium active:cursor-grabbing',
-                                                EVENT_CHIP[ev.event_type || 'meeting'],
-                                            )}
-                                            style={{
-                                                top: `${(topOffset / 60) * 64}px`,
-                                                height: `${heightPx}px`,
-                                            }}
-                                        >
-                                            <div className="flex items-center gap-1">
-                                                <GripVertical className="h-3 w-3 shrink-0 opacity-40" />
-                                                <span className="truncate">{ev.title}</span>
-                                            </div>
-                                            <span className="text-[10px] opacity-70">
-                                                {formatTimeRange(s, eEnd)}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                                {selectedEvent && cellEvents.some((e) => e.id === selectedEvent.id) && (
-                                    <EventPopover
-                                        event={selectedEvent}
-                                        onClose={() => onSelectEvent(null)}
-                                        canManage={canManage}
-                                        onEdit={onEditEvent}
-                                        onDelete={onDeleteEvent}
-                                    />
-                                )}
+            <div className={cx(
+                "max-h-[70vh] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800 transition-opacity duration-300",
+                !hasEvents && "opacity-40"
+            )}>
+                <div className="grid grid-cols-[60px_1fr]">
+                    {hours.map((hour) => {
+                        const cellEvents = eventsByHour.get(hour) ?? EMPTY_EVENTS;
+
+                        return (
+                            <div key={hour} className="contents">
+                                <div className="flex h-16 items-start justify-end border-b border-r border-slate-200 pr-2 pt-1 text-xs text-slate-400 dark:border-slate-800">
+                                    {formatHourLabel(hour)}
+                                </div>
+                                <div
+                                    className={cx(
+                                        'relative h-16 border-b border-slate-200 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40',
+                                        canManage && 'cursor-pointer',
+                                    )}
+                                    onClick={() => canManage && onCreateAt(setHours(setMinutes(currentDate, 0), hour))}
+                                    onDragOver={handleDragOver}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        const { kind, id } = getDragData(e);
+                                        if (id && kind === 'event') {
+                                            const target = setHours(setMinutes(currentDate, 0), hour);
+                                            onDropEvent(id, target);
+                                        }
+                                    }}
+                                >
+                                    {cellEvents.map((ev) => {
+                                        const s = parseUTC(ev.start);
+                                        const eEnd = parseUTC(ev.end);
+                                        const duration = Math.max(differenceInMinutes(eEnd, s), 15);
+                                        const topOffset = getMinutes(s);
+                                        const heightPx = Math.min((duration / 60) * 64, 128);
+
+                                        return (
+                                            <button
+                                                key={ev.id}
+                                                type="button"
+                                                draggable
+                                                onDragStart={(e) => setDragData(e, 'event', ev.id)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onSelectEvent(selectedEvent?.id === ev.id ? null : ev);
+                                                }}
+                                                className={cx(
+                                                    'absolute left-1 right-1 cursor-grab rounded border px-2 py-1 text-left text-xs font-medium active:cursor-grabbing',
+                                                    EVENT_CHIP[ev.event_type || 'meeting'],
+                                                )}
+                                                style={{
+                                                    top: `${(topOffset / 60) * 64}px`,
+                                                    height: `${heightPx}px`,
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-1">
+                                                    <GripVertical className="h-3 w-3 shrink-0 opacity-40" />
+                                                    <span className="truncate">{ev.title}</span>
+                                                </div>
+                                                <span className="text-[10px] opacity-70">
+                                                    {formatTimeRange(s, eEnd)}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                    {selectedEvent && cellEvents.some((e) => e.id === selectedEvent.id) && (
+                                        <EventPopover
+                                            event={selectedEvent}
+                                            onClose={() => onSelectEvent(null)}
+                                            canManage={canManage}
+                                            onEdit={onEditEvent}
+                                            onDelete={onDeleteEvent}
+                                        />
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
-        </div>
+        </div> // Zamyka nowy główny div (space-y-4)
     );
 }
 
