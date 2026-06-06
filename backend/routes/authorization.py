@@ -23,11 +23,22 @@ def _normalize_role(value):
     return role
 
 def _organization_payload(org):
+    approved_user_count = sum(
+        1
+        for user in org.users or []
+        if user.approval_status == APPROVAL_APPROVED
+    )
+
     return {
         'id': org.id,
         'name': org.name,
-        'created_at': org.created_at.isoformat() if org.created_at else None,
-        'user_count': len(org.users) if org.users is not None else 0,
+        'created_at': (
+            org.created_at.isoformat()
+            if org.created_at
+            else None
+        ),
+        'user_count': approved_user_count,
+        'group_count': len(org.groups or []),
     }
 
 def _get_or_create_internal_organization():

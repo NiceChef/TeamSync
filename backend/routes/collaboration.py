@@ -26,7 +26,6 @@ def list_task_comments(task_id):
     rows = TaskComment.query.filter_by(task_id=task_id).order_by(TaskComment.created_at.asc()).all()
     return jsonify([r.to_dict() for r in rows]), 200
 
-
 @api.route('/tasks/<int:task_id>/comments', methods=['POST'])
 @require_approved_user
 def create_task_comment(task_id):
@@ -42,7 +41,12 @@ def create_task_comment(task_id):
     if not body:
         return jsonify({'error': 'body is required'}), 400
 
-    comment = TaskComment(task_id=task_id, user_id=me.id, body=body)
+    comment = TaskComment(
+        task_id=task_id,
+        user_id=me.id,
+        body=body,
+    )
+
     db.session.add(comment)
     db.session.flush()
 
@@ -51,13 +55,35 @@ def create_task_comment(task_id):
             task_id=task_id,
             user_id=me.id,
             action='comment',
-            detail_json=json.dumps({'comment_id': comment.id}),
+            detail_json=json.dumps({
+                'comment_id': comment.id,
+            }),
         )
     )
 
-    for uid in {task.user_id, task.assignee_user_id}:
-        if uid and uid != me.id:
-            _notify(uid, f'Nowy komentarz: {task.topic[:80]}', task_id=task.id)
+    notification_user_ids = {
+        task.user_id,
+    }
+
+    try:
+        notification_user_ids.update(
+            user.id
+            for user in task.effective_assigned_users()
+        )
+    except Exception:
+        if task.assignee_user_id:
+            notification_user_ids.add(task.assignee_user_id)
+
+    for user_id in notification_user_ids:
+        if not user_id or user_id == me.id:
+            continue
+
+        _notify(
+            user_id,
+            f'Nowy komentarz: {task.topic[:80]}',
+            kind='comment',
+            task_id=task.id,
+        )
 
     _notify_internal_users(
         f'{me.username} dodał komentarz do zadania: {task.topic[:80]}',
@@ -66,8 +92,8 @@ def create_task_comment(task_id):
     )
 
     db.session.commit()
-    return jsonify(comment.to_dict()), 201
 
+    return jsonify(comment.to_dict()), 201
 
 @api.route('/tasks/<int:task_id>/activities', methods=['GET'])
 @require_approved_user

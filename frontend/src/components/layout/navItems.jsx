@@ -17,8 +17,13 @@ export const navItems = [
     { to: '/tasks', label: 'Zadania', icon: CheckSquare },
     { to: '/calendar', label: 'Kalendarz', icon: CalendarDays },
     { to: '/reports', label: 'Raporty', icon: BarChart3 },
-    { to: '/authorization', label: 'Autoryzacje', icon: ShieldCheck, internalOnly: true },
-    { to: '/groups', label: 'Grupy', icon: Users, internalOnly: true },
+    { to: '/groups', label: 'Działy i organizacje', icon: Users },
+    {
+        to: '/authorization',
+        label: 'Autoryzacje',
+        icon: ShieldCheck,
+        internalOnly: true,
+    },
     { to: '/profile', label: 'Profil', icon: User },
     { to: '/more', label: 'Więcej', icon: MoreHorizontal },
 ];

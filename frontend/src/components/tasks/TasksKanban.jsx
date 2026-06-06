@@ -8,9 +8,16 @@ import {
     useDraggable,
     useDroppable,
 } from '@dnd-kit/core';
-import { CalendarClock, GripVertical, Pencil, Trash2, UserRound } from 'lucide-react';
+import {
+    CalendarClock,
+    GripVertical,
+    Pencil,
+    Trash2,
+} from 'lucide-react';
+
 import { formatDateOnly } from './taskUtils';
 import { priorityMeta } from '../../constants/priorities';
+import TaskAssignmentSummary from './TaskAssignmentSummary';
 
 const COLUMNS = [
     {
@@ -54,11 +61,10 @@ function CardBody({ task, navigate, handleEdit, handleDeleteTask, dragHandle }) 
                 <button
                     type="button"
                     onClick={() => navigate(`/tasks/${task.id}`)}
-                    className={`min-w-0 flex-1 text-left text-sm font-medium transition-colors hover:text-indigo-600 dark:hover:text-indigo-300 ${
-                        task.completed
-                            ? 'text-slate-400 line-through'
-                            : 'text-slate-800 dark:text-slate-100'
-                    }`}
+                    className={`min-w-0 flex-1 text-left text-sm font-medium transition-colors hover:text-indigo-600 dark:hover:text-indigo-300 ${task.completed
+                        ? 'text-slate-400 line-through'
+                        : 'text-slate-800 dark:text-slate-100'
+                        }`}
                 >
                     {task.topic}
                 </button>
@@ -68,12 +74,10 @@ function CardBody({ task, navigate, handleEdit, handleDeleteTask, dragHandle }) 
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prio.badgeClass}`}>
                     {prio.label}
                 </span>
-                {task.assignee?.username && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        <UserRound className="h-3 w-3" />
-                        {task.assignee.username}
-                    </span>
-                )}
+                <TaskAssignmentSummary
+                    task={task}
+                    compact
+                />
                 {task.deadline && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         <CalendarClock className="h-3 w-3" />
@@ -132,9 +136,8 @@ function Column({ column, tasks, navigate, handleEdit, handleDeleteTask }) {
     return (
         <div
             ref={setNodeRef}
-            className={`flex flex-col rounded-xl border border-t-4 ${column.accent} bg-slate-50 p-3 transition-colors dark:bg-slate-950/60 ${
-                isOver ? 'ring-2 ring-indigo-400' : 'border-slate-200 dark:border-slate-800'
-            }`}
+            className={`flex flex-col rounded-xl border border-t-4 ${column.accent} bg-slate-50 p-3 transition-colors dark:bg-slate-950/60 ${isOver ? 'ring-2 ring-indigo-400' : 'border-slate-200 dark:border-slate-800'
+                }`}
         >
             <div className="mb-3 flex items-center justify-between px-1">
                 <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{column.label}</h3>

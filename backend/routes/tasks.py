@@ -1,9 +1,10 @@
 import json
 from datetime import datetime, date
-from access import require_approved_user
+from access import is_internal, require_approved_user
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import or_ as db_or
+from project_access import project_has_full_access
 
 from models import (
     db,
@@ -17,6 +18,7 @@ from models import (
     Group,
     Project,
     CalendarEvent,
+    Organization,
 )
 from task_access import visible_tasks_condition, task_visible, can_edit_task, can_delete_task
 from routes import api
@@ -192,6 +194,332 @@ def _parse_task_datetime(value, field_name):
         return None, jsonify({
             'error': f'Invalid {field_name} format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM format.'
         }), 400
+
+def _parse_assignment_ids(value, field_name):
+    if value is None:
+        return [], None
+
+    if not isinstance(value, list):
+        return None, (
+            jsonify({
+                'error': f'{field_name} must be a list of IDs',
+            }),
+            400,
+        )
+
+    parsed_ids = []
+
+    try:
+        for item in value:
+            item_id = int(item)
+
+            if item_id not in parsed_ids:
+                parsed_ids.append(item_id)
+    except (TypeError, ValueError):
+        return None, (
+            jsonify({
+                'error': f'{field_name} must contain only valid IDs',
+            }),
+            400,
+        )
+
+    return parsed_ids, None
+
+
+def _assignment_payload_present(data):
+    return any(
+        field in data
+        for field in (
+            'assigned_user_ids',
+            'assigned_group_ids',
+            'assigned_organization_ids',
+            'assignee_user_id',
+            'group_id',
+        )
+    )
+
+
+def _assignment_organization_ids(users, groups, organizations):
+    organization_ids = {
+        organization.id
+        for organization in organizations
+        if organization is not None
+    }
+
+    organization_ids.update(
+        group.organization_id
+        for group in groups
+        if group.organization_id is not None
+    )
+
+    organization_ids.update(
+        user.organization_id
+        for user in users
+        if user.organization_id is not None
+    )
+
+    return organization_ids
+
+
+def _remove_redundant_assignments(users, groups, organizations):
+    """
+    Usuwa przypisania dublujące się przez organizację lub grupę.
+
+    Jeśli wybrano organizację:
+    - usuwamy bezpośrednio wybrane osoby z tej organizacji,
+    - usuwamy grupy należące do tej organizacji.
+
+    Jeśli wybrano grupę:
+    - usuwamy bezpośrednio wybrane osoby należące do tej grupy.
+    """
+    organization_ids = {
+        organization.id
+        for organization in organizations
+    }
+
+    filtered_groups = [
+        group
+        for group in groups
+        if group.organization_id not in organization_ids
+    ]
+
+    covered_user_ids = set()
+
+    for organization in organizations:
+        covered_user_ids.update(
+            user.id
+            for user in organization.users or []
+        )
+
+    for group in filtered_groups:
+        covered_user_ids.update(
+            user.id
+            for user in group.members or []
+        )
+
+    filtered_users = [
+        user
+        for user in users
+        if user.id not in covered_user_ids
+    ]
+
+    return filtered_users, filtered_groups, organizations
+
+def _resolve_task_assignments(actor, data, project=None):
+    assigned_user_ids, users_error = _parse_assignment_ids(
+        data.get('assigned_user_ids', []),
+        'assigned_user_ids',
+    )
+
+    if users_error:
+        return None, users_error
+
+    assigned_group_ids, groups_error = _parse_assignment_ids(
+        data.get('assigned_group_ids', []),
+        'assigned_group_ids',
+    )
+
+    if groups_error:
+        return None, groups_error
+
+    assigned_organization_ids, organizations_error = _parse_assignment_ids(
+        data.get('assigned_organization_ids', []),
+        'assigned_organization_ids',
+    )
+
+    if organizations_error:
+        return None, organizations_error
+
+    # Zgodność ze starszym frontendem.
+    legacy_assignee_id = data.get('assignee_user_id')
+
+    if legacy_assignee_id not in (None, ''):
+        legacy_assignee_id = int(legacy_assignee_id)
+
+        if legacy_assignee_id not in assigned_user_ids:
+            assigned_user_ids.append(legacy_assignee_id)
+
+    legacy_group_id = data.get('group_id')
+
+    if legacy_group_id not in (None, ''):
+        legacy_group_id = int(legacy_group_id)
+
+        if legacy_group_id not in assigned_group_ids:
+            assigned_group_ids.append(legacy_group_id)
+
+    users = (
+        User.query.filter(User.id.in_(assigned_user_ids)).all()
+        if assigned_user_ids
+        else []
+    )
+
+    groups = (
+        Group.query.filter(Group.id.in_(assigned_group_ids)).all()
+        if assigned_group_ids
+        else []
+    )
+
+    organizations = (
+        Organization.query
+        .filter(Organization.id.in_(assigned_organization_ids))
+        .all()
+        if assigned_organization_ids
+        else []
+    )
+
+    if len(users) != len(assigned_user_ids):
+        return None, (
+            jsonify({
+                'error': 'One or more assigned users do not exist',
+            }),
+            400,
+        )
+
+    if len(groups) != len(assigned_group_ids):
+        return None, (
+            jsonify({
+                'error': 'One or more assigned groups do not exist',
+            }),
+            400,
+        )
+
+    if len(organizations) != len(assigned_organization_ids):
+        return None, (
+            jsonify({
+                'error': 'One or more assigned organizations do not exist',
+            }),
+            400,
+        )
+
+    # Nadal pozwalamy przypisać zadanie bezpośrednio tylko jednej organizacji.
+    if len(organizations) > 1:
+        return None, (
+            jsonify({
+                'error': 'A task can be assigned to only one organization',
+            }),
+            400,
+        )
+
+    for user in users:
+        if is_internal(actor):
+            continue
+
+        if user.organization_id != actor.organization_id:
+            return None, (
+                jsonify({
+                    'error': (
+                        f'User {user.id} cannot be assigned '
+                        'because they belong to another organization'
+                    ),
+                }),
+                403,
+            )
+
+    for group in groups:
+        if not _user_can_use_group(actor, group):
+            return None, (
+                jsonify({
+                    'error': f'Group {group.id} cannot be assigned to this task',
+                }),
+                400,
+            )
+
+    for organization in organizations:
+        if (
+            not is_internal(actor)
+            and actor.organization_id != organization.id
+        ):
+            return None, (
+                jsonify({
+                    'error': 'You cannot assign another organization',
+                }),
+                403,
+            )
+
+    users, groups, organizations = _remove_redundant_assignments(
+        users,
+        groups,
+        organizations,
+    )
+
+    organization_ids = _assignment_organization_ids(
+        users,
+        groups,
+        organizations,
+    )
+
+    if project is not None:
+        # organization_id zadania pozostaje organizacją właścicielską projektu.
+        # Widoczność osób z innych organizacji wynika z przypisań many-to-many.
+        task_organization_id = project.organization_id
+    elif len(organization_ids) > 1:
+        return None, (
+            jsonify({
+                'error': (
+                    'Assignments outside a project must belong '
+                    'to the same organization'
+                ),
+            }),
+            400,
+        )
+    elif organization_ids:
+        task_organization_id = next(iter(organization_ids))
+    else:
+        task_organization_id = actor.organization_id
+
+    return {
+        'users': users,
+        'groups': groups,
+        'organizations': organizations,
+        'organization_id': task_organization_id,
+    }, None
+
+def _sync_task_assignments(task, assignment_data):
+    users = assignment_data['users']
+    groups = assignment_data['groups']
+    organizations = assignment_data['organizations']
+
+    task.assigned_users = users
+    task.assigned_groups = groups
+    task.assigned_organizations = organizations
+    task.organization_id = assignment_data['organization_id']
+
+    # Pola zgodności dla starszych fragmentów aplikacji.
+    task.assignee_user_id = users[0].id if users else None
+    task.group_id = groups[0].id if groups else None
+
+
+def _notify_new_task_assignees(task, actor):
+    notified_user_ids = set()
+
+    for user in task.effective_assigned_users():
+        if user.id == actor.id or user.id in notified_user_ids:
+            continue
+
+        _notify(
+            user.id,
+            f'Nowe zadanie przypisane: {task.topic[:120]}',
+            task_id=task.id,
+        )
+
+        notified_user_ids.add(user.id)
+
+
+def _notify_task_status_assignees(task, actor):
+    notified_user_ids = set()
+
+    for user in task.effective_assigned_users():
+        if user.id == actor.id or user.id in notified_user_ids:
+            continue
+
+        _notify(
+            user.id,
+            f'Zmiana statusu zadania: {task.topic[:80]}',
+            kind='status',
+            task_id=task.id,
+        )
+
+        notified_user_ids.add(user.id)
 
 @api.route('/tasks', methods=['GET'])
 @require_approved_user
@@ -396,112 +724,125 @@ def get_tasks():
 @api.route('/tasks', methods=['POST'])
 @require_approved_user
 def create_task():
-    """Utwórz nowe zadanie (wymaga autoryzacji)"""
     current_user_id = int(get_jwt_identity())
     me = User.query.get_or_404(current_user_id)
     data = request.get_json() or {}
 
-    if not data.get('topic'):
+    topic = (data.get('topic') or '').strip()
+    if not topic:
         return jsonify({'error': 'Topic is required'}), 400
 
-    deadline, deadline_error = _parse_task_datetime(data.get('deadline'), 'deadline')
+    deadline, deadline_error = _parse_task_datetime(
+        data.get('deadline'),
+        'deadline',
+    )
     if deadline_error:
         return deadline_error
 
-    planned_date, planned_date_error = _parse_task_datetime(data.get('planned_date'), 'planned_date')
+    planned_date, planned_date_error = _parse_task_datetime(
+        data.get('planned_date'),
+        'planned_date',
+    )
     if planned_date_error:
         return planned_date_error
-    
+
+    if planned_date and deadline and planned_date > deadline:
+        return jsonify({
+            'error': 'planned_date_after_deadline',
+            'message': 'Data planu nie może być późniejsza niż deadline zadania.',
+        }), 400
+
     todo = _default_todo_status()
     done = TaskStatus.query.filter_by(code='done').first()
+
     completed = bool(data.get('completed', False))
     status_id = None
-    if data.get('status_id') is not None:
-        st = TaskStatus.query.get(int(data['status_id']))
-        if st:
-            status_id = st.id
-            completed = bool(st.is_terminal)
+
+    if data.get('status_id') not in (None, ''):
+        status = TaskStatus.query.get(int(data['status_id']))
+
+        if not status:
+            return jsonify({'error': 'Invalid status'}), 400
+
+        status_id = status.id
+        completed = bool(status.is_terminal)
     elif completed and done:
         status_id = done.id
     elif todo:
         status_id = todo.id
 
-    assignee_user_id = data.get('assignee_user_id')
-    if assignee_user_id is not None:
-        assignee_user_id = int(assignee_user_id)
-        if not _valid_assignee(me, assignee_user_id):
-            return jsonify({'error': 'Invalid assignee for your organization'}), 400
+    priority = data.get('priority') or 'medium'
+    if priority not in ('low', 'medium', 'high'):
+        priority = 'medium'
 
-    group_id = data.get('group_id')
-    if group_id is not None:
-        g = Group.query.get(int(group_id))
-        if not _user_can_use_group(me, g):
-            return jsonify({'error': 'Invalid group'}), 400
-        group_id = int(group_id)
-    else:
-        group_id = None
-
-    pr = data.get('priority') or 'medium'
-    if pr not in ('low', 'medium', 'high'):
-        pr = 'medium'
-
+    project = None
     project_id = data.get('project_id')
-    if project_id is not None:
-        p = Project.query.get(int(project_id))
-        if not _user_can_use_project(me, p):
-            return jsonify({'error': 'Invalid project'}), 400
-        project_id = int(project_id)
+
+    if project_id not in (None, ''):
+        project = Project.query.get(int(project_id))
+
+        if not project or not project_has_full_access(project, me):
+            return jsonify({
+                'error': 'You need full project access to create a task in it',
+            }), 403
+
+        project_id = project.id
     else:
         project_id = None
 
-    task_organization_id = me.organization_id
-
-    if project_id is not None:
-        project = Project.query.get(project_id)
-        if project and project.organization_id is not None:
-            task_organization_id = project.organization_id
-
-    if group_id is not None:
-        group = Group.query.get(group_id)
-        if group and group.organization_id is not None:
-            task_organization_id = group.organization_id
+    assignments, assignments_error = _resolve_task_assignments(
+        me,
+        data,
+        project=project,
+    )
+    if assignments_error:
+        return assignments_error
 
     task = Task(
-        topic=data['topic'],
-        notes=data.get('notes', ''),
+        topic=topic,
+        notes=data.get('notes') or '',
         deadline=deadline,
         planned_date=planned_date,
         user_id=current_user_id,
         completed=completed,
         status_id=status_id,
-        priority=pr,
+        priority=priority,
         version=1,
-        assignee_user_id=assignee_user_id,
-        group_id=group_id,
         project_id=project_id,
-        organization_id=task_organization_id,
+        organization_id=assignments['organization_id'],
     )
 
     db.session.add(task)
     db.session.flush()
+
+    _sync_task_assignments(task, assignments)
+
     db.session.add(
         TaskActivity(
             task_id=task.id,
             user_id=me.id,
             action='task_created',
-            detail_json=json.dumps({'topic': task.topic}),
+            detail_json=json.dumps({
+                'topic': task.topic,
+                'assigned_user_ids': [
+                    user.id for user in assignments['users']
+                ],
+                'assigned_group_ids': [
+                    group.id for group in assignments['groups']
+                ],
+                'assigned_organization_ids': [
+                    organization.id
+                    for organization in assignments['organizations']
+                ],
+            }),
         )
     )
-    if assignee_user_id and assignee_user_id != me.id:
-        _notify(
-            assignee_user_id,
-            f'Nowe zadanie przypisane: {task.topic[:120]}',
-            task_id=task.id,
-        )
+
+    _notify_new_task_assignees(task, me)
+
     db.session.commit()
 
-    return jsonify(task.to_dict()), 201
-
+    return jsonify(task.to_dict(include_relations=True)), 201
 
 @api.route('/tasks/<int:task_id>', methods=['GET'])
 @require_approved_user
@@ -513,101 +854,176 @@ def get_task(task_id):
     include_relations = request.args.get('include_relations', 'false').lower() == 'true'
     return jsonify(task.to_dict(include_relations=include_relations)), 200
 
-
 @api.route('/tasks/<int:task_id>', methods=['PUT'])
 @require_approved_user
 def update_task(task_id):
     me = User.query.get_or_404(int(get_jwt_identity()))
     task = Task.query.get(task_id)
+
     if not task or not can_edit_task(task, me):
         return jsonify({'error': 'Task not found'}), 404
 
     data = request.get_json() or {}
 
     if data.get('expected_version') is not None:
-        if int(data['expected_version']) != int(task.version or 1):
+        expected_version = int(data['expected_version'])
+        current_version = int(task.version or 1)
+
+        if expected_version != current_version:
             return jsonify({
                 'error': 'Conflict',
                 'message': 'Zadanie zostało już zaktualizowane przez innego użytkownika.',
-                'current_version': task.version,
+                'current_version': current_version,
             }), 409
+
+    old_effective_assignee_ids = {
+        user.id
+        for user in task.effective_assigned_users()
+    }
 
     old = {
         'completed': task.completed,
         'status_id': task.status_id,
         'topic': task.topic,
         'priority': task.priority,
+        'project_id': task.project_id,
+        'organization_id': task.organization_id,
+        'assigned_user_ids': [
+            user.id for user in task.assigned_users
+        ],
+        'assigned_group_ids': [
+            group.id for group in task.assigned_groups
+        ],
+        'assigned_organization_ids': [
+            organization.id
+            for organization in task.assigned_organizations
+        ],
     }
+
     cascade_subtasks = bool(data.get('cascade_subtasks', False))
+
     if 'topic' in data:
-        task.topic = data['topic']
+        topic = (data.get('topic') or '').strip()
+
+        if not topic:
+            return jsonify({'error': 'Topic is required'}), 400
+
+        task.topic = topic
 
     if 'notes' in data:
-        task.notes = data['notes'] if data['notes'] else ''
+        task.notes = data.get('notes') or ''
 
     if 'deadline' in data:
-        deadline, deadline_error = _parse_task_datetime(data.get('deadline'), 'deadline')
+        deadline, deadline_error = _parse_task_datetime(
+            data.get('deadline'),
+            'deadline',
+        )
         if deadline_error:
             return deadline_error
+
         task.deadline = deadline
 
     if 'planned_date' in data:
-        planned_date, planned_date_error = _parse_task_datetime(data.get('planned_date'), 'planned_date')
+        planned_date, planned_date_error = _parse_task_datetime(
+            data.get('planned_date'),
+            'planned_date',
+        )
         if planned_date_error:
             return planned_date_error
+
         task.planned_date = planned_date
-        
-    if 'priority' in data and data['priority'] in ('low', 'medium', 'high'):
-        task.priority = data['priority']
+
+    if task.planned_date and task.deadline and task.planned_date > task.deadline:
+        return jsonify({
+            'error': 'planned_date_after_deadline',
+            'message': 'Data planu nie może być późniejsza niż deadline zadania.',
+        }), 400
+
+    if 'priority' in data:
+        priority = data.get('priority')
+
+        if priority not in ('low', 'medium', 'high'):
+            return jsonify({'error': 'Invalid priority'}), 400
+
+        task.priority = priority
 
     if 'status_id' in data:
-        if data['status_id'] is None:
+        status_id = data.get('status_id')
+
+        if status_id in (None, ''):
             task.status_id = None
         else:
-            st = TaskStatus.query.get(int(data['status_id']))
-            if st:
-                task.status_id = st.id
-                task.completed = bool(st.is_terminal)
+            status = TaskStatus.query.get(int(status_id))
+
+            if not status:
+                return jsonify({'error': 'Invalid status'}), 400
+
+            task.status_id = status.id
+            task.completed = bool(status.is_terminal)
 
     if 'completed' in data:
-        _apply_completed_bool(task, data['completed'])
+        _apply_completed_bool(task, data.get('completed'))
 
-    if 'assignee_user_id' in data:
-        aid = data['assignee_user_id']
-        if aid is None:
-            task.assignee_user_id = None
-        else:
-            aid = int(aid)
-            if not _valid_assignee(me, aid):
-                return jsonify({'error': 'Invalid assignee'}), 400
-            if aid != task.assignee_user_id and aid != me.id:
-                _notify(aid, f'Przypisano Ci zadanie: {task.topic[:120]}', task_id=task.id)
-            task.assignee_user_id = aid
-
-    if 'group_id' in data:
-        gid = data['group_id']
-        if gid is None:
-            task.group_id = None
-        else:
-            g = Group.query.get(int(gid))
-            if not _user_can_use_group(me, g):
-                return jsonify({'error': 'Invalid group'}), 400
-            task.group_id = g.id
-            if task.organization_id is None:
-                task.organization_id = g.organization_id
+    project = task.project
 
     if 'project_id' in data:
-        pid = data['project_id']
-        if pid is None:
+        project_id = data.get('project_id')
+
+        if project_id in (None, ''):
+            project = None
             task.project_id = None
         else:
-            p = Project.query.get(int(pid))
-            if not _user_can_use_project(me, p):
-                return jsonify({'error': 'Invalid project'}), 400
-            task.project_id = p.id
-            task.organization_id = p.organization_id
-            
-    is_closing_task = old.get('completed') is False and task.completed is True
+            project = Project.query.get(int(project_id))
+
+            if not project or not project_has_full_access(project, me):
+                return jsonify({
+                    'error': 'You need full project access to move a task into it',
+                }), 403
+
+            task.project_id = project.id
+
+    should_sync_assignments = (
+        _assignment_payload_present(data)
+        or 'project_id' in data
+    )
+
+    if should_sync_assignments:
+        assignment_payload = dict(data)
+
+        if not _assignment_payload_present(data):
+            assignment_payload.update({
+                'assigned_user_ids': [
+                    user.id for user in task.assigned_users
+                ],
+                'assigned_group_ids': [
+                    group.id for group in task.assigned_groups
+                ],
+                'assigned_organization_ids': [
+                    organization.id
+                    for organization in task.assigned_organizations
+                ],
+            })
+
+        assignments, assignments_error = _resolve_task_assignments(
+            me,
+            assignment_payload,
+            project=project,
+        )
+        if assignments_error:
+            return assignments_error
+
+        _sync_task_assignments(task, assignments)
+    elif project is not None:
+        task.organization_id = project.organization_id
+
+    hierarchy_error = _validate_task_deadline_hierarchy(task)
+    if hierarchy_error:
+        return hierarchy_error
+
+    is_closing_task = (
+        old.get('completed') is False
+        and task.completed is True
+    )
 
     if is_closing_task:
         open_subtasks = _direct_open_subtasks(task)
@@ -615,7 +1031,10 @@ def update_task(task_id):
         if open_subtasks and not cascade_subtasks:
             return jsonify({
                 'error': 'open_subtasks',
-                'message': 'To zadanie ma otwarte podzadania. Czy na pewno chcesz je zamknąć razem z zadaniem?',
+                'message': (
+                    'To zadanie ma otwarte podzadania. '
+                    'Czy na pewno chcesz je zamknąć razem z zadaniem?'
+                ),
                 'open_subtasks': [
                     {
                         'id': subtask.id,
@@ -627,46 +1046,65 @@ def update_task(task_id):
 
         if open_subtasks and cascade_subtasks:
             _close_subtasks_recursively(task, me)
+
     task.version = int(task.version or 1) + 1
+
+    new_effective_assignees = task.effective_assigned_users()
+    new_effective_assignee_ids = {
+        user.id
+        for user in new_effective_assignees
+    }
+
+    newly_assigned_user_ids = (
+        new_effective_assignee_ids
+        - old_effective_assignee_ids
+    )
+
+    for user in new_effective_assignees:
+        if user.id == me.id or user.id not in newly_assigned_user_ids:
+            continue
+
+        _notify(
+            user.id,
+            f'Przypisano Ci zadanie: {task.topic[:120]}',
+            task_id=task.id,
+        )
+
+    if old.get('completed') != task.completed:
+        _notify_task_status_assignees(task, me)
 
     db.session.add(
         TaskActivity(
             task_id=task.id,
             user_id=me.id,
             action='task_update',
-            detail_json=json.dumps({'before': old}),
+            detail_json=json.dumps({
+                'before': old,
+                'after': {
+                    'completed': task.completed,
+                    'status_id': task.status_id,
+                    'topic': task.topic,
+                    'priority': task.priority,
+                    'project_id': task.project_id,
+                    'organization_id': task.organization_id,
+                    'assigned_user_ids': [
+                        user.id for user in task.assigned_users
+                    ],
+                    'assigned_group_ids': [
+                        group.id for group in task.assigned_groups
+                    ],
+                    'assigned_organization_ids': [
+                        organization.id
+                        for organization in task.assigned_organizations
+                    ],
+                },
+            }),
         )
     )
 
-    if old.get('completed') != task.completed and task.assignee_user_id and task.assignee_user_id != me.id:
-        _notify(
-            task.assignee_user_id,
-            f'Zmiana statusu zadania: {task.topic[:80]}',
-            kind='status',
-            task_id=task.id,
-        )
-
     db.session.commit()
-    return jsonify(task.to_dict()), 200
 
-
-@api.route('/tasks/<int:task_id>', methods=['DELETE'])
-@require_approved_user
-def delete_task(task_id):
-    me = User.query.get_or_404(int(get_jwt_identity()))
-    task = Task.query.get(task_id)
-    if not task or not task_visible(task, me):
-        return jsonify({'error': 'Task not found'}), 404
-    if not can_delete_task(task, me):
-        return jsonify({'error': 'Only the task owner can delete this task'}), 403
-
-    CalendarEvent.query.filter_by(task_id=task.id).update(
-        {'task_id': None}, synchronize_session=False
-    )
-    db.session.delete(task)
-    db.session.commit()
-    return jsonify({'message': 'Task deleted successfully'}), 200
-
+    return jsonify(task.to_dict(include_relations=True)), 200
 
 @api.route('/tasks/import', methods=['POST'])
 @require_approved_user

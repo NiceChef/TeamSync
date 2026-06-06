@@ -7,13 +7,15 @@ import { Field, FieldLabel, FieldError } from './ui/Field';
 import TextInput from './ui/TextInput';
 import Select from './ui/Select';
 import { API_URL, fetchWithAuth } from '../api/authFetch';
-import { isClient, canManage } from '../constants/roles';
+import { canManage } from '../constants/roles';
 import { PRIORITY_OPTIONS } from '../constants/priorities';
 import { compressImage } from '../utils/image';
 import TaskCommentsCard from './tasks/edit/TaskCommentsCard';
 import TaskActivityCard from './tasks/edit/TaskActivityCard';
 import TaskAttachmentsCard from './tasks/edit/TaskAttachmentsCard';
 import TaskRelationsCard from './tasks/edit/TaskRelationsCard';
+import CreateTaskAssignment from './tasks/create/CreateTaskAssignment';
+import { fetchOrganizations } from '../api/authorization';
 
 function formatDateTimeForInput(value) {
   if (!value) return '';
@@ -67,8 +69,9 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
     related_tasks: {},
     status_id: '',
     priority: 'medium',
-    assignee_user_id: '',
-    group_id: '',
+    assigned_user_ids: [],
+    assigned_group_ids: [],
+    assigned_organization_ids: [],
     project_id: '',
     version: 1,
   });
@@ -81,15 +84,16 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
   const [activities, setActivities] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [meUser, setMeUser] = useState(null);
+  const [organizationsList, setOrganizationsList] = useState([]);
 
-
-  // Pobierz taska
   const fetchTask = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
 
-      const response = await fetchWithAuth(`${API_URL}/api/tasks/${id}?include_relations=true`);
+      const response = await fetchWithAuth(
+        `${API_URL}/api/tasks/${id}?include_relations=true`
+      );
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -97,6 +101,7 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
           closeView();
           return;
         }
+
         if (response.status === 401) {
           setError('Sesja wygasła. Zaloguj się ponownie.');
           localStorage.removeItem('access_token');
@@ -105,11 +110,16 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
           navigate('/');
           return;
         }
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Nie udało się pobrać zadania');
+
+        const errorData = await response.json().catch(() => ({}));
+
+        throw new Error(
+          errorData.error || 'Nie udało się pobrać zadania'
+        );
       }
 
       const taskData = await response.json();
+
       setTask(taskData);
 
       setEditingTask({
@@ -118,25 +128,45 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
         notes: taskData.notes || '',
         deadline: formatDateTimeForInput(taskData.deadline),
         planned_date: formatDateTimeForInput(taskData.planned_date),
-        completed: taskData.completed || false,
+        completed: Boolean(taskData.completed),
         categories: taskData.categories || [],
         related_tasks: taskData.related_tasks || {},
         status_id: taskData.status?.id ?? taskData.status_id ?? '',
         priority: taskData.priority || 'medium',
-        assignee_user_id:
-          taskData.assignee_user_id != null ? taskData.assignee_user_id : '',
-        group_id: taskData.group_id != null ? taskData.group_id : '',
-        project_id: taskData.project_id != null ? taskData.project_id : '',
+
+        assigned_user_ids:
+          taskData.assigned_user_ids?.length
+            ? taskData.assigned_user_ids
+            : taskData.assignee_user_id != null
+              ? [taskData.assignee_user_id]
+              : [],
+
+        assigned_group_ids:
+          taskData.assigned_group_ids?.length
+            ? taskData.assigned_group_ids
+            : taskData.group_id != null
+              ? [taskData.group_id]
+              : [],
+
+        assigned_organization_ids:
+          taskData.assigned_organization_ids || [],
+
+        project_id:
+          taskData.project_id != null
+            ? taskData.project_id
+            : '',
+
         version: taskData.version ?? 1,
       });
-    } catch (err) {
-      setError(err.message || 'Nie udało się pobrać zadania');
+    } catch (fetchError) {
+      setError(
+        fetchError.message || 'Nie udało się pobrać zadania'
+      );
     } finally {
       setLoading(false);
     }
   }, [id, closeView, navigate]);
 
-  // Pobierz wszystkie taski (dla subtasków)
   const fetchAllTasks = useCallback(async () => {
     try {
       const response = await fetchWithAuth(`${API_URL}/api/tasks?include_relations=true`);
@@ -174,29 +204,97 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    (async () => {
-      const [stRes, pRes, meRes] = await Promise.all([
-        fetchWithAuth(`${API_URL}/api/task-statuses`),
-        fetchWithAuth(`${API_URL}/api/projects`),
-        fetchWithAuth(`${API_URL}/api/auth/me`),
-      ]);
-      if (stRes.ok) setTaskStatuses(await stRes.json());
-      if (pRes.ok) setProjectsList(await pRes.json());
-      if (!meRes.ok) return;
-      const me = await meRes.json();
-      setMeUser(me);
-      if (isClient(me)) {
-        setAssignUsers([]);
-        setGroupsList([]);
-        return;
+
+    let cancelled = false;
+
+    const loadAssignmentData = async () => {
+      try {
+        const [statusResponse, projectsResponse, meResponse] = await Promise.all([
+          fetchWithAuth(`${API_URL}/api/task-statuses`),
+          fetchWithAuth(`${API_URL}/api/projects`),
+          fetchWithAuth(`${API_URL}/api/auth/me`),
+        ]);
+
+        if (cancelled) return;
+
+        if (statusResponse.ok) {
+          setTaskStatuses(await statusResponse.json());
+        }
+
+        if (projectsResponse.ok) {
+          setProjectsList(await projectsResponse.json());
+        }
+
+        if (!meResponse.ok) return;
+
+        const me = await meResponse.json();
+
+        if (cancelled) return;
+
+        setMeUser(me);
+
+        if (!canManage(me)) {
+          setAssignUsers([]);
+          setGroupsList([]);
+          setOrganizationsList([]);
+          return;
+        }
+
+        const [usersResponse, groupsResponse, organizations] = await Promise.all([
+          fetchWithAuth(`${API_URL}/api/users`),
+          fetchWithAuth(`${API_URL}/api/groups`),
+          fetchOrganizations(),
+        ]);
+
+        if (cancelled) return;
+
+        if (usersResponse.ok) {
+          setAssignUsers(await usersResponse.json());
+        }
+
+        setOrganizationsList(
+          Array.isArray(organizations) ? organizations : []
+        );
+
+        if (groupsResponse.ok) {
+          const groups = await groupsResponse.json();
+
+          const groupsWithMembers = await Promise.all(
+            groups.map(async (group) => {
+              const response = await fetchWithAuth(
+                `${API_URL}/api/groups/${group.id}`
+              );
+
+              if (!response.ok) {
+                return {
+                  ...group,
+                  members: [],
+                };
+              }
+
+              return response.json();
+            })
+          );
+
+          if (!cancelled) {
+            setGroupsList(groupsWithMembers);
+          }
+        }
+      } catch (fetchError) {
+        if (!cancelled) {
+          console.error(
+            'Nie udało się pobrać danych przypisań:',
+            fetchError
+          );
+        }
       }
-      const [uRes, gRes] = await Promise.all([
-        fetchWithAuth(`${API_URL}/api/users`),
-        fetchWithAuth(`${API_URL}/api/groups`),
-      ]);
-      if (uRes.ok) setAssignUsers(await uRes.json());
-      if (gRes.ok) setGroupsList(await gRes.json());
-    })();
+    };
+
+    loadAssignmentData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -332,17 +430,14 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
         taskData.status_id = Number(editingTask.status_id);
       }
 
-      if (editingTask.assignee_user_id === '' || editingTask.assignee_user_id == null) {
-        taskData.assignee_user_id = null;
-      } else {
-        taskData.assignee_user_id = Number(editingTask.assignee_user_id);
-      }
+      taskData.assigned_user_ids =
+        editingTask.assigned_user_ids || [];
 
-      if (editingTask.group_id === '' || editingTask.group_id == null) {
-        taskData.group_id = null;
-      } else {
-        taskData.group_id = Number(editingTask.group_id);
-      }
+      taskData.assigned_group_ids =
+        editingTask.assigned_group_ids || [];
+
+      taskData.assigned_organization_ids =
+        editingTask.assigned_organization_ids || [];
 
       if (editingTask.project_id === '' || editingTask.project_id == null) {
         taskData.project_id = null;
@@ -761,117 +856,55 @@ function EditTask({ isAuthenticated, drawer = false, taskId = null, onClose, onS
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field>
-              <FieldLabel>Status</FieldLabel>
-              <Select
-                id="edit-status"
-                value={editingTask.status_id === '' ? '' : String(editingTask.status_id)}
-                onChange={(e) =>
-                  setEditingTask((p) => ({
-                    ...p,
-                    status_id: e.target.value === '' ? '' : Number(e.target.value),
-                  }))
-                }
-                disabled={submitting}
-              >
-                <option value="">—</option>
-                {taskStatuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel>Priorytet</FieldLabel>
-              <Select
-                id="edit-priority"
-                name="priority"
-                value={editingTask.priority}
-                onChange={handleEditInputChange}
-                disabled={submitting}
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field>
               <FieldLabel>Projekt</FieldLabel>
               <Select
                 id="edit-project"
                 value={editingTask.project_id === '' ? '' : String(editingTask.project_id)}
                 onChange={(e) =>
-                  setEditingTask((p) => ({
-                    ...p,
-                    project_id: e.target.value === '' ? '' : Number(e.target.value),
+                  setEditingTask((previous) => ({
+                    ...previous,
+                    project_id:
+                      e.target.value === ''
+                        ? ''
+                        : Number(e.target.value),
                   }))
                 }
                 disabled={submitting}
               >
-                <option value="">—</option>
-                {projectsList.map((proj) => (
-                  <option key={proj.id} value={proj.id}>
-                    {proj.name}
+                <option value="">Brak projektu</option>
+
+                {projectsList.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
                   </option>
                 ))}
               </Select>
             </Field>
-            {canManage(meUser) && (
-              <>
-                <Field>
-                  <FieldLabel>Przypisany</FieldLabel>
-                  <Select
-                    id="edit-assignee"
-                    value={
-                      editingTask.assignee_user_id === ''
-                        ? ''
-                        : String(editingTask.assignee_user_id)
-                    }
-                    onChange={(e) =>
-                      setEditingTask((p) => ({
-                        ...p,
-                        assignee_user_id:
-                          e.target.value === '' ? '' : Number(e.target.value),
-                      }))
-                    }
-                    disabled={submitting}
-                  >
-                    <option value="">—</option>
-                    {assignUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.username}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field>
-                  <FieldLabel>Grupa</FieldLabel>
-                  <Select
-                    id="edit-group"
-                    value={editingTask.group_id === '' ? '' : String(editingTask.group_id)}
-                    onChange={(e) =>
-                      setEditingTask((p) => ({
-                        ...p,
-                        group_id: e.target.value === '' ? '' : Number(e.target.value),
-                      }))
-                    }
-                    disabled={submitting}
-                  >
-                    <option value="">—</option>
-                    {groupsList.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </>
-            )}
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Wersja optymistyczna: {editingTask.version} (przy zapisie wykrywany konflikt edycji)
-          </p>
 
+          {canManage(meUser) && (
+            <CreateTaskAssignment
+              users={assignUsers}
+              groups={groupsList}
+              organizations={organizationsList}
+              value={editingTask}
+              disabled={submitting}
+              onChange={(assignments) => {
+                setEditingTask((previous) => ({
+                  ...previous,
+                  ...assignments,
+                }));
+
+                setError('');
+              }}
+            />
+          )}
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Wersja optymistyczna: {editingTask.version}
+            {' '}
+            (przy zapisie wykrywany jest konflikt edycji)
+          </p>
           <div className="border-t border-slate-200 pt-6 dark:border-slate-800">
             <FieldLabel>Kategorie</FieldLabel>
             {categories.length === 0 ? (

@@ -6,6 +6,8 @@ import { useMe } from '../../context/auth-context';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { PROJECT_STATUSES, statusMeta, initials } from './projectUtils';
+import ProjectAssignment from './ProjectAssignment';
+import { API_URL, fetchWithAuth } from '../../api/authFetch';
 
 function toLocalDateTimeInputValue(date = new Date(), hour = null) {
     const value = new Date(date);
@@ -73,33 +75,161 @@ function MemberAvatars({ members = [], count }) {
 }
 
 function CreateProjectDialog({ open, onClose, onCreated }) {
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
-    const [status, setStatus] = useState('draft');
-    const [plannedStart, setPlannedStart] = useState(toLocalDateTimeInputValue(new Date(), 7));
-    const [deadline, setDeadline] = useState(toLocalDateTimeInputValue(new Date(), 16));
+    const me = useMe();
+
+    const [form, setForm] = useState({
+        name: '',
+        description: '',
+        status: 'draft',
+        planned_start: toLocalDateTimeInputValue(new Date(), 7),
+        deadline: toLocalDateTimeInputValue(new Date(), 16),
+        member_ids: [],
+        assigned_group_ids: [],
+        assigned_organization_ids: [],
+    });
+
+    const [users, setUsers] = useState([]);
+    const [groups, setGroups] = useState([]);
+    const [organizations, setOrganizations] = useState([]);
+    const [loadingAssignments, setLoadingAssignments] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(() => {
-        if (open) {
-            setName('');
-            setDescription('');
-            setStatus('draft');
-            setPlannedStart(toLocalDateTimeInputValue(new Date(), 7));
-            setDeadline(toLocalDateTimeInputValue(new Date(), 16));
-            setError('');
-        }
-    }, [open]);
+        if (!open) return;
+
+        let cancelled = false;
+
+        setForm({
+            name: '',
+            description: '',
+            status: 'draft',
+            planned_start: toLocalDateTimeInputValue(new Date(), 7),
+            deadline: toLocalDateTimeInputValue(new Date(), 16),
+            member_ids: [],
+            assigned_group_ids: [],
+            assigned_organization_ids: [],
+        });
+
+        setUsers([]);
+        setGroups([]);
+        setOrganizations([]);
+        setError('');
+        setLoadingAssignments(true);
+
+        const loadAssignments = async () => {
+            try {
+                const [
+                    usersResponse,
+                    groupsResponse,
+                    organizationsResponse,
+                ] = await Promise.all([
+                    fetchWithAuth(`${API_URL}/api/users`),
+                    fetchWithAuth(`${API_URL}/api/groups`),
+                    fetchWithAuth(`${API_URL}/api/organizations`),
+                ]);
+
+                const usersData = usersResponse.ok
+                    ? await usersResponse.json()
+                    : [];
+
+                const groupsData = groupsResponse.ok
+                    ? await groupsResponse.json()
+                    : [];
+
+                const organizationsData = organizationsResponse.ok
+                    ? await organizationsResponse.json()
+                    : [];
+
+                const groupsWithMembers = await Promise.all(
+                    (Array.isArray(groupsData) ? groupsData : []).map(
+                        async (group) => {
+                            const response = await fetchWithAuth(
+                                `${API_URL}/api/groups/${group.id}`
+                            );
+
+                            if (!response.ok) {
+                                return {
+                                    ...group,
+                                    members: [],
+                                };
+                            }
+
+                            const details = await response.json();
+
+                            return {
+                                ...group,
+                                ...details,
+                                members: details.members || [],
+                            };
+                        }
+                    )
+                );
+
+                if (cancelled) return;
+
+                setUsers(
+                    Array.isArray(usersData)
+                        ? usersData
+                        : []
+                );
+
+                setGroups(groupsWithMembers);
+
+                setOrganizations(
+                    Array.isArray(organizationsData)
+                        ? organizationsData
+                        : []
+                );
+            } catch (loadError) {
+                if (!cancelled) {
+                    setError(
+                        loadError.message ||
+                        'Nie udało się pobrać danych przypisań.'
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoadingAssignments(false);
+                }
+            }
+        };
+
+        loadAssignments();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [open, me]);
 
     if (!open) return null;
 
-    const submit = async (e) => {
-        e.preventDefault();
+    const updateField = (field, value) => {
+        setForm((previous) => ({
+            ...previous,
+            [field]: value,
+        }));
+
+        setError('');
+    };
+
+    const submit = async (event) => {
+        event.preventDefault();
         setError('');
 
-        if (deadline && plannedStart && new Date(deadline) < new Date(plannedStart)) {
-            setError('Deadline projektu nie może być wcześniejszy niż data rozpoczęcia.');
+        if (!form.name.trim()) {
+            setError('Nazwa projektu jest wymagana.');
+            return;
+        }
+
+        if (
+            form.deadline &&
+            form.planned_start &&
+            new Date(form.deadline) < new Date(form.planned_start)
+        ) {
+            setError(
+                'Deadline projektu nie może być wcześniejszy niż data rozpoczęcia.'
+            );
             return;
         }
 
@@ -107,16 +237,23 @@ function CreateProjectDialog({ open, onClose, onCreated }) {
 
         try {
             const project = await createProject({
-                name,
-                description,
-                status,
-                planned_start: plannedStart || null,
-                deadline: deadline || null,
+                name: form.name.trim(),
+                description: form.description.trim(),
+                status: form.status,
+                planned_start: form.planned_start || null,
+                deadline: form.deadline || null,
+                member_ids: form.member_ids,
+                assigned_group_ids: form.assigned_group_ids,
+                assigned_organization_ids:
+                    form.assigned_organization_ids,
             });
 
             onCreated(project);
-        } catch (err) {
-            setError(err.message);
+        } catch (submitError) {
+            setError(
+                submitError.message ||
+                'Nie udało się utworzyć projektu.'
+            );
         } finally {
             setSaving(false);
         }
@@ -124,101 +261,187 @@ function CreateProjectDialog({ open, onClose, onCreated }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-                <div className="mb-4 flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                        Nowy projekt
-                    </h3>
+            <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+                    <div>
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                            Nowy projekt
+                        </h3>
+
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Utwórz projekt i określ osoby posiadające pełny dostęp.
+                        </p>
+                    </div>
+
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                        disabled={saving}
+                        title="Zamknij"
+                        className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50 dark:hover:bg-slate-800"
                     >
                         <X className="h-5 w-5" />
                     </button>
                 </div>
 
-                {error && (
-                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-                        {error}
-                    </div>
-                )}
+                <form
+                    onSubmit={submit}
+                    className="flex min-h-0 flex-1 flex-col"
+                >
+                    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+                        {error && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                                {error}
+                            </div>
+                        )}
 
-                <form onSubmit={submit} className="space-y-4">
-                    <label className="block">
-                        <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                            Nazwa
-                        </span>
-                        <input
-                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            required
-                            autoFocus
-                        />
-                    </label>
-
-                    <label className="block">
-                        <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                            Opis opcjonalnie
-                        </span>
-                        <textarea
-                            rows={3}
-                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                        />
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
                         <label className="block">
                             <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                                Data rozpoczęcia
+                                Nazwa projektu
                             </span>
+
                             <input
-                                type="datetime-local"
                                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                                value={plannedStart}
-                                onChange={(e) => setPlannedStart(e.target.value)}
+                                value={form.name}
+                                onChange={(event) =>
+                                    updateField('name', event.target.value)
+                                }
+                                disabled={saving}
+                                required
+                                autoFocus
                             />
                         </label>
 
                         <label className="block">
                             <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                                Deadline
+                                Opis opcjonalnie
                             </span>
-                            <input
-                                type="datetime-local"
-                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                                value={deadline}
-                                onChange={(e) => setDeadline(e.target.value)}
+
+                            <textarea
+                                rows={3}
+                                className="mt-1 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                value={form.description}
+                                onChange={(event) =>
+                                    updateField(
+                                        'description',
+                                        event.target.value
+                                    )
+                                }
+                                disabled={saving}
                             />
                         </label>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="block">
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                                    Data rozpoczęcia
+                                </span>
+
+                                <input
+                                    type="datetime-local"
+                                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    value={form.planned_start}
+                                    onChange={(event) =>
+                                        updateField(
+                                            'planned_start',
+                                            event.target.value
+                                        )
+                                    }
+                                    disabled={saving}
+                                />
+                            </label>
+
+                            <label className="block">
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                                    Deadline
+                                </span>
+
+                                <input
+                                    type="datetime-local"
+                                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    value={form.deadline}
+                                    onChange={(event) =>
+                                        updateField(
+                                            'deadline',
+                                            event.target.value
+                                        )
+                                    }
+                                    disabled={saving}
+                                />
+                            </label>
+                        </div>
+
+                        <label className="block">
+                            <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                                Status
+                            </span>
+
+                            <select
+                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                value={form.status}
+                                onChange={(event) =>
+                                    updateField(
+                                        'status',
+                                        event.target.value
+                                    )
+                                }
+                                disabled={saving}
+                            >
+                                {PROJECT_STATUSES.map((projectStatus) => (
+                                    <option
+                                        key={projectStatus.code}
+                                        value={projectStatus.code}
+                                    >
+                                        {projectStatus.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+
+                        {loadingAssignments ? (
+                            <div className="h-36 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+                        ) : (
+                            <ProjectAssignment
+                                users={users}
+                                groups={groups}
+                                organizations={organizations}
+                                memberIds={form.member_ids}
+                                groupIds={form.assigned_group_ids}
+                                organizationIds={
+                                    form.assigned_organization_ids
+                                }
+                                allowOrganizations
+                                disabled={saving}
+                                onChange={(assignments) => {
+                                    setForm((previous) => ({
+                                        ...previous,
+                                        ...assignments,
+                                    }));
+
+                                    setError('');
+                                }}
+                            />
+                        )}
                     </div>
 
-                    <label className="block">
-                        <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                            Status
-                        </span>
-                        <select
-                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                            value={status}
-                            onChange={(e) => setStatus(e.target.value)}
+                    <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={onClose}
+                            disabled={saving}
                         >
-                            {PROJECT_STATUSES.map((s) => (
-                                <option key={s.code} value={s.code}>
-                                    {s.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <Button type="button" variant="secondary" onClick={onClose}>
                             Anuluj
                         </Button>
-                        <Button type="submit" variant="primary" disabled={saving}>
-                            {saving ? 'Tworzenie...' : 'Utwórz projekt'}
+
+                        <Button
+                            type="submit"
+                            variant="primary"
+                            disabled={saving || loadingAssignments}
+                        >
+                            {saving
+                                ? 'Tworzenie...'
+                                : 'Utwórz projekt'}
                         </Button>
                     </div>
                 </form>
@@ -374,12 +597,23 @@ export default function ProjectsList({ isAuthenticated }) {
                                     <ProgressBar value={p.progress_percent} />
                                 </div>
                                 <div className="mt-4 flex items-center justify-between gap-3">
-                                    <MemberAvatars count={p.member_count} />
+                                    {p.partial_access ? (
+                                        <Badge variant="warning">
+                                            Dostęp przez zadanie
+                                        </Badge>
+                                    ) : (
+                                        <MemberAvatars count={p.effective_member_count} />
+                                    )}
 
                                     <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-400">
-                                        <span>
-                                            {p.member_count} {p.member_count === 1 ? 'członek' : 'członków'}
-                                        </span>
+                                        {!p.partial_access && (
+                                            <span>
+                                                {p.effective_member_count || 0}{' '}
+                                                {p.effective_member_count === 1
+                                                    ? 'osoba z dostępem'
+                                                    : 'osób z dostępem'}
+                                            </span>
+                                        )}
 
                                         {Number(p.comment_count || 0) > 0 && (
                                             <span

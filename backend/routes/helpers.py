@@ -2,6 +2,13 @@ from datetime import datetime, date, timezone
 from access import is_internal, is_approved
 from models import db, User, Task, TaskRelation, TaskStatus, Notification
 
+from project_access import (
+    project_visible,
+    can_manage_project,
+    can_use_project,
+    task_visible_for_user,
+)
+
 def _org_match(a, b):
     return (a or None) == (b or None)
 
@@ -25,16 +32,8 @@ def _user_can_use_group(user, group):
     if is_internal(user):
         return True
 
-    if not _org_match(user.organization_id, group.organization_id):
-        return False
+    return _org_match(user.organization_id, group.organization_id)
 
-    try:
-        if user in group.members:
-            return True
-    except Exception:
-        pass
-
-    return user.id == group.created_by_id
 
 def _can_manage_group(user, group):
     if not group or not is_approved(user):
@@ -43,46 +42,42 @@ def _can_manage_group(user, group):
     if is_internal(user):
         return True
 
-    if not _org_match(user.organization_id, group.organization_id):
-        return False
-
-    return user.id == group.created_by_id
+    return _org_match(user.organization_id, group.organization_id)
 
 def _project_visible(user, project):
-    if not project or not is_approved(user):
-        return False
+    return project_visible(project, user)
 
-    if is_internal(user):
-        return True
-
-    return _org_match(user.organization_id, project.organization_id)
 
 def _can_manage_project(user, project):
-    if not project or not is_approved(user):
-        return False
+    return can_manage_project(project, user)
 
-    if is_internal(user):
-        return True
-
-    if not _org_match(user.organization_id, project.organization_id):
-        return False
-
-    return user.id == project.created_by_id
 
 def _user_can_use_project(user, project):
-    if not project or not is_approved(user):
-        return False
-
-    if is_internal(user):
-        return True
-
-    return _org_match(user.organization_id, project.organization_id)
+    return can_use_project(project, user)
 
 def _event_visible(user, event):
     if not event or not is_approved(user):
         return False
 
     if is_internal(user):
+        return True
+
+    if event.created_by_id == user.id:
+        return True
+
+    try:
+        if any(
+            attendee.id == user.id
+            for attendee in event.attendees or []
+        ):
+            return True
+    except Exception:
+        pass
+
+    if event.task and task_visible_for_user(event.task, user):
+        return True
+
+    if event.project and project_visible(event.project, user):
         return True
 
     return _org_match(user.organization_id, event.organization_id)
@@ -94,10 +89,7 @@ def _can_manage_event(user, event):
     if is_internal(user):
         return True
 
-    if not _org_match(user.organization_id, event.organization_id):
-        return False
-
-    return user.id == event.created_by_id
+    return event.created_by_id == user.id
 
 def _parse_dt(value):
     """ISO 8601 (z 'Z' lub bez) -> naive UTC datetime. Zwraca None gdy puste/błędne."""

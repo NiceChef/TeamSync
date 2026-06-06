@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
+import TaskAssignmentSummary from './TaskAssignmentSummary';
 import {
     ArrowLeft,
     CalendarClock,
@@ -16,8 +17,6 @@ import {
     Pencil,
     Send,
     Trash2,
-    UserRound,
-    Users,
 } from 'lucide-react';
 import {
     getTask,
@@ -338,12 +337,6 @@ export default function TaskDetail({ isAuthenticated }) {
                     <MetaItem icon={CalendarClock} label="Deadline">
                         {formatDate(task.deadline)}
                     </MetaItem>
-                    <MetaItem icon={UserRound} label="Przypisany">
-                        {task.assignee?.username || '—'}
-                    </MetaItem>
-                    <MetaItem icon={Users} label="Grupa">
-                        {task.group?.name || '—'}
-                    </MetaItem>
                     <MetaItem icon={FolderKanban} label="Projekt">
                         {task.project_id ? (
                             <Link
@@ -359,6 +352,23 @@ export default function TaskDetail({ isAuthenticated }) {
                     <MetaItem icon={History} label="Utworzono">
                         {formatDate(task.created_at)}
                     </MetaItem>
+                    <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800">
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                    Przypisanie zadania
+                                </h3>
+
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    Łącznie przypisano {task.effective_assignee_count || 0} osób.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mt-3">
+                            <TaskAssignmentSummary task={task} />
+                        </div>
+                    </div>
                 </div>
             </div>
 

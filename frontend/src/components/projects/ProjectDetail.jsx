@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import CreateTask from '../tasks/CreateTask';
 import {
     ArrowLeft,
+    Building2,
     CheckCircle2,
     Circle,
     MessageSquare,
@@ -27,7 +28,8 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { PROJECT_STATUSES, statusMeta, initials } from './projectUtils';
 import { priorityMeta } from '../../constants/priorities';
-import { canManage as userCanManage } from '../../constants/roles';
+import ProjectAssignment from './ProjectAssignment';
+import { API_URL, fetchWithAuth } from '../../api/authFetch';
 
 function formatDateTime(value) {
     if (!value) return '-';
@@ -68,21 +70,149 @@ function htmlToPlainText(value) {
     return element.textContent || element.innerText || '';
 }
 
-function EditProjectForm({ project, onSaved, onCancel }) {
-    const [name, setName] = useState(project.name);
-    const [description, setDescription] = useState(project.description || '');
-    const [status, setStatus] = useState(project.status);
-    const [plannedStart, setPlannedStart] = useState(formatDateTimeForInput(project.planned_start));
-    const [deadline, setDeadline] = useState(formatDateTimeForInput(project.deadline));
+function EditProjectForm({ project, me, onSaved, onCancel }) {
+    const [form, setForm] = useState({
+        name: project.name || '',
+        description: project.description || '',
+        status: project.status || 'draft',
+        planned_start: formatDateTimeForInput(project.planned_start),
+        deadline: formatDateTimeForInput(project.deadline),
+
+        member_ids:
+            project.member_ids ||
+            (project.members || []).map((member) => member.id),
+
+        assigned_group_ids:
+            project.assigned_group_ids || [],
+
+        assigned_organization_ids:
+            project.assigned_organization_ids || [],
+    });
+
+    const [users, setUsers] = useState([]);
+    const [groups, setGroups] = useState([]);
+    const [organizations, setOrganizations] = useState([]);
+
+    const [loadingAssignments, setLoadingAssignments] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
-    const submit = async (e) => {
-        e.preventDefault();
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadAssignments = async () => {
+            setLoadingAssignments(true);
+
+            try {
+                const [
+                    usersResponse,
+                    groupsResponse,
+                    organizationsResponse,
+                ] = await Promise.all([
+                    fetchWithAuth(`${API_URL}/api/users`),
+                    fetchWithAuth(`${API_URL}/api/groups`),
+                    fetchWithAuth(`${API_URL}/api/organizations`),
+                ]);
+
+                const usersData = usersResponse.ok
+                    ? await usersResponse.json()
+                    : [];
+
+                const groupsData = groupsResponse.ok
+                    ? await groupsResponse.json()
+                    : [];
+
+                const organizationsData = organizationsResponse.ok
+                    ? await organizationsResponse.json()
+                    : [];
+
+                const groupsWithMembers = await Promise.all(
+                    (Array.isArray(groupsData) ? groupsData : []).map(
+                        async (group) => {
+                            const response = await fetchWithAuth(
+                                `${API_URL}/api/groups/${group.id}`
+                            );
+
+                            if (!response.ok) {
+                                return {
+                                    ...group,
+                                    members: [],
+                                };
+                            }
+
+                            const details = await response.json();
+
+                            return {
+                                ...group,
+                                ...details,
+                                members: details.members || [],
+                            };
+                        }
+                    )
+                );
+
+                if (cancelled) return;
+
+                setUsers(
+                    Array.isArray(usersData)
+                        ? usersData
+                        : []
+                );
+
+                setGroups(groupsWithMembers);
+
+                setOrganizations(
+                    Array.isArray(organizationsData)
+                        ? organizationsData
+                        : []
+                );
+            } catch (loadError) {
+                if (!cancelled) {
+                    setError(
+                        loadError.message ||
+                        'Nie udało się pobrać danych przypisań.'
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoadingAssignments(false);
+                }
+            }
+        };
+
+        loadAssignments();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [me]);
+
+    const updateField = (field, value) => {
+        setForm((previous) => ({
+            ...previous,
+            [field]: value,
+        }));
+
+        setError('');
+    };
+
+    const submit = async (event) => {
+        event.preventDefault();
         setError('');
 
-        if (deadline && plannedStart && new Date(deadline) < new Date(plannedStart)) {
-            setError('Deadline projektu nie może być wcześniejszy niż data rozpoczęcia.');
+        if (!form.name.trim()) {
+            setError('Nazwa projektu jest wymagana.');
+            return;
+        }
+
+        if (
+            form.deadline &&
+            form.planned_start &&
+            new Date(form.deadline) < new Date(form.planned_start)
+        ) {
+            setError(
+                'Deadline projektu nie może być wcześniejszy niż data rozpoczęcia.'
+            );
             return;
         }
 
@@ -90,16 +220,23 @@ function EditProjectForm({ project, onSaved, onCancel }) {
 
         try {
             const updated = await updateProject(project.id, {
-                name,
-                description,
-                status,
-                planned_start: plannedStart || null,
-                deadline: deadline || null,
+                name: form.name.trim(),
+                description: form.description.trim(),
+                status: form.status,
+                planned_start: form.planned_start || null,
+                deadline: form.deadline || null,
+                member_ids: form.member_ids,
+                assigned_group_ids: form.assigned_group_ids,
+                assigned_organization_ids:
+                    form.assigned_organization_ids,
             });
 
             onSaved(updated);
-        } catch (err) {
-            setError(err.message);
+        } catch (submitError) {
+            setError(
+                submitError.message ||
+                'Nie udało się zaktualizować projektu.'
+            );
         } finally {
             setSaving(false);
         }
@@ -108,8 +245,18 @@ function EditProjectForm({ project, onSaved, onCancel }) {
     return (
         <form
             onSubmit={submit}
-            className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
+            <div>
+                <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                    Edycja projektu
+                </h3>
+
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Zmień szczegóły projektu oraz osoby posiadające pełny dostęp.
+                </p>
+            </div>
+
             {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
                     {error}
@@ -117,22 +264,34 @@ function EditProjectForm({ project, onSaved, onCancel }) {
             )}
 
             <label className="block">
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Nazwa</span>
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                    Nazwa
+                </span>
+
                 <input
                     className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={form.name}
+                    onChange={(event) =>
+                        updateField('name', event.target.value)
+                    }
+                    disabled={saving}
                     required
                 />
             </label>
 
             <label className="block">
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Opis</span>
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                    Opis
+                </span>
+
                 <textarea
                     rows={3}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    className="mt-1 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    value={form.description}
+                    onChange={(event) =>
+                        updateField('description', event.target.value)
+                    }
+                    disabled={saving}
                 />
             </label>
 
@@ -141,11 +300,18 @@ function EditProjectForm({ project, onSaved, onCancel }) {
                     <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                         Data rozpoczęcia
                     </span>
+
                     <input
                         type="datetime-local"
                         className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                        value={plannedStart}
-                        onChange={(e) => setPlannedStart(e.target.value)}
+                        value={form.planned_start}
+                        onChange={(event) =>
+                            updateField(
+                                'planned_start',
+                                event.target.value
+                            )
+                        }
+                        disabled={saving}
                     />
                 </label>
 
@@ -153,36 +319,87 @@ function EditProjectForm({ project, onSaved, onCancel }) {
                     <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                         Deadline
                     </span>
+
                     <input
                         type="datetime-local"
                         className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                        value={deadline}
-                        onChange={(e) => setDeadline(e.target.value)}
+                        value={form.deadline}
+                        onChange={(event) =>
+                            updateField(
+                                'deadline',
+                                event.target.value
+                            )
+                        }
+                        disabled={saving}
                     />
                 </label>
             </div>
 
             <label className="block">
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Status</span>
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                    Status
+                </span>
+
                 <select
                     className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
+                    value={form.status}
+                    onChange={(event) =>
+                        updateField('status', event.target.value)
+                    }
+                    disabled={saving}
                 >
-                    {PROJECT_STATUSES.map((s) => (
-                        <option key={s.code} value={s.code}>
-                            {s.label}
+                    {PROJECT_STATUSES.map((projectStatus) => (
+                        <option
+                            key={projectStatus.code}
+                            value={projectStatus.code}
+                        >
+                            {projectStatus.label}
                         </option>
                     ))}
                 </select>
             </label>
 
-            <div className="flex justify-end gap-2">
-                <Button type="button" variant="secondary" onClick={onCancel}>
+            {loadingAssignments ? (
+                <div className="h-36 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+            ) : (
+                <ProjectAssignment
+                    users={users}
+                    groups={groups}
+                    organizations={organizations}
+                    memberIds={form.member_ids}
+                    groupIds={form.assigned_group_ids}
+                    organizationIds={form.assigned_organization_ids}
+                    allowOrganizations
+                    disabled={saving}
+                    onChange={(assignments) => {
+                        setForm((previous) => ({
+                            ...previous,
+                            ...assignments,
+                        }));
+
+                        setError('');
+                    }}
+                />
+            )}
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={onCancel}
+                    disabled={saving}
+                >
                     Anuluj
                 </Button>
-                <Button type="submit" variant="primary" disabled={saving}>
-                    {saving ? 'Zapisywanie...' : 'Zapisz zmiany'}
+
+                <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={saving || loadingAssignments}
+                >
+                    {saving
+                        ? 'Zapisywanie...'
+                        : 'Zapisz zmiany'}
                 </Button>
             </div>
         </form>
@@ -194,116 +411,257 @@ function MembersPanel({ project, canManage, onChanged }) {
     const [hits, setHits] = useState([]);
     const [error, setError] = useState('');
 
+    const members = project.members || [];
+    const groups = project.assigned_groups || [];
+    const organizations = project.assigned_organizations || [];
+
+    const effectiveMemberCount =
+        project.effective_member_count ??
+        members.length;
+
     const doSearch = async () => {
         setError('');
+
         try {
             const data = await searchUsers(userSearch);
-            const memberIds = new Set((project.members || []).map((m) => m.id));
-            setHits(data.filter((u) => !memberIds.has(u.id)));
-        } catch (err) {
-            setError(err.message);
+
+            const effectiveMemberIds = new Set(
+                (project.effective_members || []).map(
+                    (member) => member.id
+                )
+            );
+
+            setHits(
+                data.filter(
+                    (user) => !effectiveMemberIds.has(user.id)
+                )
+            );
+        } catch (requestError) {
+            setError(requestError.message);
         }
     };
 
     const add = async (userId) => {
         setError('');
+
         try {
             const updated = await addProjectMember(project.id, userId);
-            setHits((h) => h.filter((u) => u.id !== userId));
+
+            setHits((current) =>
+                current.filter((user) => user.id !== userId)
+            );
+
             onChanged(updated);
-        } catch (err) {
-            setError(err.message);
+        } catch (requestError) {
+            setError(requestError.message);
         }
     };
 
     const remove = async (userId) => {
         setError('');
+
         try {
             await removeProjectMember(project.id, userId);
+
             onChanged({
                 ...project,
-                members: project.members.filter((m) => m.id !== userId),
+                members: members.filter(
+                    (member) => member.id !== userId
+                ),
+                member_ids: (project.member_ids || []).filter(
+                    (id) => id !== userId
+                ),
             });
-        } catch (err) {
-            setError(err.message);
+        } catch (requestError) {
+            setError(requestError.message);
         }
     };
 
     return (
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-3 flex items-center gap-2">
-                <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                    Członkowie ({(project.members || []).length})
-                </h3>
-            </div>
+        <section className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <header>
+                <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
+
+                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                        Dostęp do projektu
+                    </h3>
+                </div>
+
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Łącznie dostęp posiada {effectiveMemberCount} użytkowników.
+                </p>
+            </header>
 
             {error && (
-                <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
                     {error}
                 </div>
             )}
 
-            {(project.members || []).length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Brak członków.</p>
-            ) : (
-                <ul className="space-y-2">
-                    {project.members.map((m) => (
-                        <li
-                            key={m.id}
-                            className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
-                        >
-                            <span className="flex min-w-0 items-center gap-2">
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200">
-                                    {initials(m)}
-                                </span>
-                                <span className="min-w-0 truncate text-sm text-slate-700 dark:text-slate-200">
-                                    {m.username}
-                                </span>
-                            </span>
-                            {canManage && (
-                                <button
-                                    type="button"
-                                    onClick={() => remove(m.id)}
-                                    title="Usuń członka"
-                                    className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
-                                >
-                                    <UserMinus className="h-4 w-4" />
-                                </button>
-                            )}
-                        </li>
-                    ))}
-                </ul>
+            {organizations.length > 0 && (
+                <div>
+                    <div className="mb-2 flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-slate-500" />
+
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                            Organizacje
+                        </h4>
+                    </div>
+
+                    <ul className="space-y-2">
+                        {organizations.map((organization) => (
+                            <li
+                                key={organization.id}
+                                className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
+                            >
+                                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    {organization.name}
+                                </p>
+
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                    Cała organizacja · {organization.user_count || 0} użytkowników
+                                </p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             )}
 
+            {groups.length > 0 && (
+                <div>
+                    <div className="mb-2 flex items-center gap-2">
+                        <Users className="h-4 w-4 text-slate-500" />
+
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                            Działy
+                        </h4>
+                    </div>
+
+                    <ul className="space-y-2">
+                        {groups.map((group) => (
+                            <li
+                                key={group.id}
+                                className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
+                            >
+                                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    {group.name}
+                                </p>
+
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                    {group.organization_name || 'Brak organizacji'}
+                                    {' · '}
+                                    {group.member_count || 0} członków
+                                </p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            <div>
+                <div className="mb-2 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-slate-500" />
+
+                    <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        Osoby przypisane bezpośrednio
+                    </h4>
+                </div>
+
+                {members.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Brak osób przypisanych bezpośrednio.
+                    </p>
+                ) : (
+                    <ul className="space-y-2">
+                        {members.map((member) => (
+                            <li
+                                key={member.id}
+                                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
+                            >
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200">
+                                        {initials(member)}
+                                    </span>
+
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm text-slate-700 dark:text-slate-200">
+                                            {member.username}
+                                        </span>
+
+                                        <span className="block truncate text-xs text-slate-400">
+                                            {member.organization_name || member.email}
+                                        </span>
+                                    </span>
+                                </span>
+
+                                {canManage && member.id !== project.created_by_id && (
+                                    <button
+                                        type="button"
+                                        onClick={() => remove(member.id)}
+                                        title="Usuń bezpośrednie przypisanie"
+                                        className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
+                                    >
+                                        <UserMinus className="h-4 w-4" />
+                                    </button>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
             {canManage && (
-                <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
+                    <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        Dodaj osobę bezpośrednio
+                    </p>
+
                     <div className="flex gap-2">
                         <input
                             type="search"
                             placeholder="Szukaj użytkownika..."
                             className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             value={userSearch}
-                            onChange={(e) => setUserSearch(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && doSearch()}
+                            onChange={(event) =>
+                                setUserSearch(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    doSearch();
+                                }
+                            }}
                         />
-                        <Button variant="secondary" size="sm" onClick={doSearch}>
+
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={doSearch}
+                        >
                             <Search className="h-4 w-4" />
+                            Szukaj
                         </Button>
                     </div>
+
                     {hits.length > 0 && (
                         <ul className="mt-3 space-y-2">
-                            {hits.map((u) => (
+                            {hits.map((user) => (
                                 <li
-                                    key={u.id}
+                                    key={user.id}
                                     className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-950"
                                 >
                                     <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
-                                        {u.username} <span className="text-slate-400">({u.email})</span>
+                                        {user.username}
+                                        <span className="text-slate-400">
+                                            {' '}({user.email})
+                                        </span>
                                     </span>
+
                                     <button
                                         type="button"
-                                        onClick={() => add(u.id)}
+                                        onClick={() => add(user.id)}
                                         className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
                                     >
                                         <Plus className="h-3.5 w-3.5" />
@@ -319,7 +677,13 @@ function MembersPanel({ project, canManage, onChanged }) {
     );
 }
 
-function TasksPanel({ tasks, onCreateTask, onOpenTask }) {
+function TasksPanel({
+    tasks,
+    onCreateTask,
+    onOpenTask,
+    canCreateTask = false,
+    partialAccess = false,
+}) {
     const [expandedTaskId, setExpandedTaskId] = useState(null);
 
     const toggleExpanded = (taskId) => {
@@ -329,14 +693,29 @@ function TasksPanel({ tasks, onCreateTask, onOpenTask }) {
     return (
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                    Zadania projektu ({tasks.length})
-                </h3>
+                <div>
+                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                        Zadania projektu ({tasks.length})
+                    </h3>
 
-                <Button type="button" variant="primary" size="sm" onClick={onCreateTask}>
-                    <Plus className="h-4 w-4" />
-                    Dodaj zadanie
-                </Button>
+                    {partialAccess && (
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Wyświetlane są wyłącznie zadania przypisane do Ciebie.
+                        </p>
+                    )}
+                </div>
+
+                {canCreateTask && (
+                    <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={onCreateTask}
+                    >
+                        <Plus className="h-4 w-4" />
+                        Dodaj zadanie
+                    </Button>
+                )}
             </div>
 
             {tasks.length === 0 ? (
@@ -508,7 +887,9 @@ export default function ProjectDetail({ isAuthenticated }) {
     }
 
     const meta = statusMeta(project.status);
-    const canManage = userCanManage(me);
+    const canManage = Boolean(project.can_manage);
+    const hasFullAccess = Boolean(project.has_full_access);
+    const partialAccess = Boolean(project.partial_access);
     const isOwner = me && me.id === project.created_by_id;
     const tasks = project.tasks || [];
 
@@ -536,6 +917,7 @@ export default function ProjectDetail({ isAuthenticated }) {
             {editing ? (
                 <EditProjectForm
                     project={project}
+                    me={me}
                     onCancel={() => setEditing(false)}
                     onSaved={(updated) => {
                         setProject((prev) => ({ ...prev, ...updated, tasks: prev.tasks, members: updated.members ?? prev.members }));
@@ -652,23 +1034,34 @@ export default function ProjectDetail({ isAuthenticated }) {
                     />
                 </section>
             )}
-            <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+            <div
+                className={
+                    hasFullAccess
+                        ? 'grid gap-6 lg:grid-cols-[1fr_340px]'
+                        : 'grid gap-6'
+                }
+            >
                 <TasksPanel
                     tasks={tasks}
+                    canCreateTask={canManage}
+                    partialAccess={partialAccess}
                     onCreateTask={() => setCreatingTask(true)}
                     onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
                 />
-                <MembersPanel
-                    project={project}
-                    canManage={canManage}
-                    onChanged={(updated) =>
-                        setProject((prev) => ({
-                            ...prev,
-                            ...updated,
-                            tasks: prev.tasks,
-                        }))
-                    }
-                />
+
+                {hasFullAccess && (
+                    <MembersPanel
+                        project={project}
+                        canManage={canManage}
+                        onChanged={(updated) =>
+                            setProject((previous) => ({
+                                ...previous,
+                                ...updated,
+                                tasks: previous.tasks,
+                            }))
+                        }
+                    />
+                )}
             </div>
         </div>
     );

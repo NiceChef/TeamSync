@@ -8,9 +8,11 @@ import Select from '../ui/Select';
 import CreateTaskCategories from './create/CreateTaskCategories';
 import CreateTaskActions from './create/CreateTaskActions';
 import { API_URL, fetchWithAuth } from '../../api/authFetch';
-import { isClient, canManage } from '../../constants/roles';
+import { canManage } from '../../constants/roles';
 import { PRIORITY_OPTIONS } from '../../constants/priorities';
 import { compressImage } from '../../utils/image';
+import CreateTaskAssignment from './create/CreateTaskAssignment';
+import { fetchOrganizations } from '../../api/authorization';
 
 function toLocalDateTimeInputValue(date = new Date(), fallbackHour = null) {
   const value = new Date(date);
@@ -83,8 +85,9 @@ function CreateTask({
     parentTaskId: parentIdFromUrl,
     selectedSubtaskIds: [],
     priority: 'medium',
-    assignee_user_id: '',
-    group_id: '',
+    assigned_user_ids: [],
+    assigned_group_ids: [],
+    assigned_organization_ids: [],
     status_id: '',
     project_id: projectIdFromProps,
   });
@@ -94,6 +97,7 @@ function CreateTask({
   const [groupsList, setGroupsList] = useState([]);
   const [projectsList, setProjectsList] = useState([]);
   const [meUser, setMeUser] = useState(null);
+  const [organizationsList, setOrganizationsList] = useState([]);
 
 
   // Pobierz wszystkie taski (dla parent task selection)
@@ -125,58 +129,122 @@ function CreateTask({
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchAllTasks();
-      fetchCategories();
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
     if (!isAuthenticated) return;
-    (async () => {
-      const [stRes, pRes, meRes] = await Promise.all([
-        fetchWithAuth(`${API_URL}/api/task-statuses`),
-        fetchWithAuth(`${API_URL}/api/projects`),
-        fetchWithAuth(`${API_URL}/api/auth/me`),
-      ]);
-      if (stRes.ok) setTaskStatuses(await stRes.json());
-      if (pRes.ok) setProjectsList(await pRes.json());
-      if (!meRes.ok) return;
-      const me = await meRes.json();
-      setMeUser(me);
-      if (isClient(me)) {
-        setAssignUsers([]);
-        setGroupsList([]);
-        return;
+
+    let cancelled = false;
+
+    const loadFormData = async () => {
+      try {
+        await Promise.all([
+          fetchAllTasks(),
+          fetchCategories(),
+        ]);
+
+        const [statusResponse, projectsResponse, meResponse] = await Promise.all([
+          fetchWithAuth(`${API_URL}/api/task-statuses`),
+          fetchWithAuth(`${API_URL}/api/projects`),
+          fetchWithAuth(`${API_URL}/api/auth/me`),
+        ]);
+
+        if (cancelled) return;
+
+        if (statusResponse.ok) {
+          setTaskStatuses(await statusResponse.json());
+        }
+
+        if (projectsResponse.ok) {
+          setProjectsList(await projectsResponse.json());
+        }
+
+        if (!meResponse.ok) return;
+
+        const me = await meResponse.json();
+
+        if (cancelled) return;
+
+        setMeUser(me);
+
+        if (!canManage(me)) {
+          setAssignUsers([]);
+          setGroupsList([]);
+          setOrganizationsList([]);
+          return;
+        }
+
+        const [usersResponse, groupsResponse, organizations] = await Promise.all([
+          fetchWithAuth(`${API_URL}/api/users`),
+          fetchWithAuth(`${API_URL}/api/groups`),
+          fetchOrganizations(),
+        ]);
+
+        if (cancelled) return;
+
+        if (usersResponse.ok) {
+          setAssignUsers(await usersResponse.json());
+        }
+
+        setOrganizationsList(
+          Array.isArray(organizations) ? organizations : []
+        );
+
+        if (groupsResponse.ok) {
+          const groups = await groupsResponse.json();
+
+          const groupsWithMembers = await Promise.all(
+            groups.map(async (group) => {
+              const response = await fetchWithAuth(
+                `${API_URL}/api/groups/${group.id}`
+              );
+
+              if (!response.ok) {
+                return {
+                  ...group,
+                  members: [],
+                };
+              }
+
+              return response.json();
+            })
+          );
+
+          if (!cancelled) {
+            setGroupsList(groupsWithMembers);
+          }
+        }
+      } catch (fetchError) {
+        if (!cancelled) {
+          console.error(
+            'Nie udało się pobrać danych formularza:',
+            fetchError
+          );
+        }
       }
-      const [uRes, gRes] = await Promise.all([
-        fetchWithAuth(`${API_URL}/api/users`),
-        fetchWithAuth(`${API_URL}/api/groups`),
-      ]);
-      if (uRes.ok) setAssignUsers(await uRes.json());
-      if (gRes.ok) setGroupsList(await gRes.json());
-    })();
+    };
+
+    loadFormData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
 
-  // Update parentTaskId when URL parameter changes
   useEffect(() => {
-    if (parentIdFromUrl) {
-      setNewTask(prev => ({
-        ...prev,
-        parentTaskId: parentIdFromUrl
-      }));
-    }
+    if (!parentIdFromUrl) return;
+
+    setNewTask((previous) => ({
+      ...previous,
+      parentTaskId: parentIdFromUrl,
+    }));
   }, [parentIdFromUrl]);
 
   useEffect(() => {
-    if (projectIdFromProps) {
-      setNewTask((prev) => ({
-        ...prev,
-        project_id: projectIdFromProps,
-      }));
-    }
-  }, [projectIdFromProps]);
+    if (!projectIdFromProps) return;
 
+    setNewTask((previous) => ({
+      ...previous,
+      project_id: projectIdFromProps,
+    }));
+  }, [projectIdFromProps]);
   useEffect(() => {
     if (!defaults) return;
 
@@ -341,12 +409,10 @@ function CreateTask({
       if (newTask.status_id !== '' && newTask.status_id != null) {
         taskData.status_id = Number(newTask.status_id);
       }
-      if (newTask.assignee_user_id !== '' && newTask.assignee_user_id != null) {
-        taskData.assignee_user_id = Number(newTask.assignee_user_id);
-      }
-      if (newTask.group_id !== '' && newTask.group_id != null) {
-        taskData.group_id = Number(newTask.group_id);
-      }
+      taskData.assigned_user_ids = newTask.assigned_user_ids || [];
+      taskData.assigned_group_ids = newTask.assigned_group_ids || [];
+      taskData.assigned_organization_ids =
+        newTask.assigned_organization_ids || [];
       if (newTask.project_id !== '' && newTask.project_id != null) {
         taskData.project_id = Number(newTask.project_id);
       }
@@ -646,54 +712,25 @@ function CreateTask({
                 </Select>
               </Field>
 
-              {canManage(meUser) && (
-                <>
-                  <Field>
-                    <FieldLabel>Przypisany</FieldLabel>
-                    <Select
-                      id="create-assignee"
-                      value={newTask.assignee_user_id === '' ? '' : String(newTask.assignee_user_id)}
-                      onChange={(e) =>
-                        setNewTask((p) => ({
-                          ...p,
-                          assignee_user_id: e.target.value === '' ? '' : Number(e.target.value),
-                        }))
-                      }
-                      disabled={submitting}
-                    >
-                      <option value="">Brak</option>
-                      {assignUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.username}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-
-                  <Field>
-                    <FieldLabel>Grupa</FieldLabel>
-                    <Select
-                      id="create-group"
-                      value={newTask.group_id === '' ? '' : String(newTask.group_id)}
-                      onChange={(e) =>
-                        setNewTask((p) => ({
-                          ...p,
-                          group_id: e.target.value === '' ? '' : Number(e.target.value),
-                        }))
-                      }
-                      disabled={submitting}
-                    >
-                      <option value="">Brak</option>
-                      {groupsList.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </>
-              )}
             </div>
+
+            {canManage(meUser) && (
+              <CreateTaskAssignment
+                users={assignUsers}
+                groups={groupsList}
+                organizations={organizationsList}
+                value={newTask}
+                disabled={submitting}
+                onChange={(assignments) => {
+                  setNewTask((previous) => ({
+                    ...previous,
+                    ...assignments,
+                  }));
+
+                  setError('');
+                }}
+              />
+            )}
 
             {!isProjectTaskMode && (
               <div className="border-t border-slate-200 pt-6 dark:border-slate-800">

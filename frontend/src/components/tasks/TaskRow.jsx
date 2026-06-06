@@ -2,6 +2,7 @@ import React from 'react';
 import { MessageSquare, Paperclip } from 'lucide-react';
 import { taskRowClassName } from './taskUtils';
 import { useTaskDrawer } from '../../context/task-drawer-context';
+import TaskAssignmentSummary from './TaskAssignmentSummary';
 
 export default function TaskRow({
     task,
@@ -123,6 +124,15 @@ export default function TaskRow({
                                 </span>
                             )}
                         </div>
+                    </div>
+                    <div
+                        className="mt-2"
+                        style={{ paddingLeft: `${task.displayLevel * 24}px` }}
+                    >
+                        <TaskAssignmentSummary
+                            task={task}
+                            compact
+                        />
                     </div>
                 </td>
 

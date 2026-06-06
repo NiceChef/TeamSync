@@ -1,322 +1,605 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Building2, Plus, Search, ShieldAlert, UserPlus, Users } from 'lucide-react';
-import { isClient, canManage } from '../constants/roles';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Building2,
+  Plus,
+  Search,
+  Trash2,
+  UserMinus,
+  UserPlus,
+  Users,
+} from 'lucide-react';
+
+import { API_URL, fetchWithAuth } from '../api/authFetch';
+import { isInternal } from '../constants/roles';
 import { useMe } from '../context/auth-context';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
 export default function Groups({ isAuthenticated }) {
-  const [groups, setGroups] = useState([]);
-  const [q, setQ] = useState('');
-  const [name, setName] = useState('');
-  const [department, setDepartment] = useState('');
-  const [expanded, setExpanded] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [userSearch, setUserSearch] = useState('');
-  const [userHits, setUserHits] = useState([]);
-  const [error, setError] = useState('');
   const me = useMe();
 
-  const token = () => localStorage.getItem('access_token');
+  const [activeTab, setActiveTab] = useState('groups');
+  const [groups, setGroups] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [department, setDepartment] = useState('');
+
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const [expandedGroupId, setExpandedGroupId] = useState(null);
+  const [groupMembers, setGroupMembers] = useState([]);
+
+  const [userSearch, setUserSearch] = useState('');
+  const [userHits, setUserHits] = useState([]);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadOrganizations = useCallback(async () => {
+    const response = await fetchWithAuth(`${API_URL}/api/organizations`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Nie udało się pobrać organizacji.');
+    }
+
+    setOrganizations(Array.isArray(data) ? data : []);
+
+    if (!selectedOrganizationId && Array.isArray(data) && data.length > 0) {
+      const ownOrganization = data.find(
+        (organization) => organization.id === me?.organization_id,
+      );
+
+      setSelectedOrganizationId(
+        String(ownOrganization?.id || data[0].id),
+      );
+    }
+  }, [me?.organization_id, selectedOrganizationId]);
 
   const loadGroups = useCallback(async () => {
-    setError('');
-    try {
-      const url = q.trim()
-        ? `${API_URL}/api/groups?q=${encodeURIComponent(q.trim())}`
-        : `${API_URL}/api/groups`;
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Błąd');
-      setGroups(Array.isArray(d) ? d : []);
-    } catch (e) {
-      setError(e.message);
+    const params = new URLSearchParams();
+
+    if (searchQuery) {
+      params.set('q', searchQuery);
     }
-  }, [q]);
+
+    if (isInternal(me) && selectedOrganizationId) {
+      params.set('organization_id', selectedOrganizationId);
+    }
+
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetchWithAuth(`${API_URL}/api/groups${suffix}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Nie udało się pobrać działów.');
+    }
+
+    setGroups(Array.isArray(data) ? data : []);
+  }, [me, searchQuery, selectedOrganizationId]);
+
+  const refreshData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      await Promise.all([
+        loadOrganizations(),
+        loadGroups(),
+      ]);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadGroups, loadOrganizations]);
 
   useEffect(() => {
-    if (isAuthenticated && canManage(me)) loadGroups();
-  }, [isAuthenticated, me, loadGroups]);
-
-  const createGroup = async (e) => {
-    e.preventDefault();
-    setError('');
-    try {
-      const r = await fetch(`${API_URL}/api/groups`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token()}`,
-        },
-        body: JSON.stringify({ name, department }),
+    if (isAuthenticated && me) {
+      refreshData();
+    }
+  }, [isAuthenticated, me, refreshData]);
+  useEffect(() => {
+    if (
+      isAuthenticated &&
+      me &&
+      isInternal(me) &&
+      selectedOrganizationId
+    ) {
+      loadGroups().catch((requestError) => {
+        setError(requestError.message);
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Błąd');
-      setName('');
+    }
+  }, [
+    isAuthenticated,
+    me,
+    selectedOrganizationId,
+    loadGroups,
+  ]);
+
+  const createGroup = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    const payload = {
+      name: groupName.trim(),
+      department: department.trim() || null,
+    };
+
+    if (isInternal(me) && selectedOrganizationId) {
+      payload.organization_id = Number(selectedOrganizationId);
+    }
+
+    try {
+      const response = await fetchWithAuth(`${API_URL}/api/groups`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nie udało się utworzyć działu.');
+      }
+
+      setGroupName('');
       setDepartment('');
       await loadGroups();
-    } catch (e) {
-      setError(e.message);
+      await loadOrganizations();
+    } catch (requestError) {
+      setError(requestError.message);
     }
   };
 
-  const openGroup = async (g) => {
-    setExpanded(g.id);
+  const openGroup = async (group) => {
+    if (expandedGroupId === group.id) {
+      setExpandedGroupId(null);
+      setGroupMembers([]);
+      setUserHits([]);
+      return;
+    }
+
     setError('');
+    setExpandedGroupId(group.id);
+    setUserHits([]);
+    setUserSearch('');
+
     try {
-      const r = await fetch(`${API_URL}/api/groups/${g.id}`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Błąd');
-      setMembers(d.members || []);
-    } catch (e) {
-      setError(e.message);
+      const response = await fetchWithAuth(
+        `${API_URL}/api/groups/${group.id}`,
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nie udało się pobrać działu.');
+      }
+
+      setGroupMembers(data.members || []);
+    } catch (requestError) {
+      setError(requestError.message);
     }
   };
 
-  const searchUsers = async () => {
+  const searchUsers = async (group) => {
     if (!userSearch.trim()) {
       setUserHits([]);
       return;
     }
-    const r = await fetch(`${API_URL}/api/users?q=${encodeURIComponent(userSearch.trim())}`, {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (r.ok) setUserHits(await r.json());
+
+    setError('');
+
+    try {
+      const response = await fetchWithAuth(
+        `${API_URL}/api/users?q=${encodeURIComponent(userSearch.trim())}`,
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nie udało się wyszukać użytkowników.');
+      }
+
+      const memberIds = new Set(groupMembers.map((member) => member.id));
+
+      setUserHits(
+        (Array.isArray(data) ? data : []).filter(
+          (user) =>
+            user.organization_id === group.organization_id &&
+            !memberIds.has(user.id),
+        ),
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
-  const addMember = async (gid, userId) => {
-    const r = await fetch(`${API_URL}/api/groups/${gid}/members`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify({ user_id: userId }),
-    });
-    if (r.ok) await openGroup({ id: gid });
+  const addMember = async (groupId, userId) => {
+    setError('');
+
+    try {
+      const response = await fetchWithAuth(
+        `${API_URL}/api/groups/${groupId}/members`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ user_id: userId }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nie udało się dodać użytkownika.');
+      }
+
+      setGroupMembers(data.members || []);
+      setUserHits((current) =>
+        current.filter((user) => user.id !== userId),
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
-  if (!isAuthenticated) return null;
-  if (isClient(me)) {
-    return (
-      <div className="mx-auto w-full max-w-3xl rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">
-            <ShieldAlert className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="font-semibold">Brak dostępu do grup</h2>
-            <p className="mt-1 text-sm">
-              Grupy są dostępne dla kont pracowniczych.
-            </p>
-          </div>
-        </div>
-      </div>
+  const removeMember = async (groupId, userId) => {
+    setError('');
+
+    try {
+      const response = await fetchWithAuth(
+        `${API_URL}/api/groups/${groupId}/members/${userId}`,
+        { method: 'DELETE' },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nie udało się usunąć użytkownika.');
+      }
+
+      setGroupMembers(data.members || []);
+      await loadGroups();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const deleteGroup = async (group) => {
+    const confirmed = window.confirm(
+      `Czy na pewno chcesz usunąć dział „${group.name}”?`,
     );
-  }
+
+    if (!confirmed) return;
+
+    setError('');
+
+    try {
+      const response = await fetchWithAuth(
+        `${API_URL}/api/groups/${group.id}`,
+        { method: 'DELETE' },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nie udało się usunąć działu.');
+      }
+
+      setExpandedGroupId(null);
+      setGroupMembers([]);
+      await loadGroups();
+      await loadOrganizations();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const submitSearch = (event) => {
+    event.preventDefault();
+    setSearchQuery(searchDraft.trim());
+  };
+
+  if (!isAuthenticated || !me) return null;
+
+  const selectedOrganization = organizations.find(
+    (organization) =>
+      String(organization.id) === String(selectedOrganizationId),
+  );
+
+  const organizationTabLabel = isInternal(me)
+    ? 'Organizacje'
+    : 'Organizacja';
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
-      <div>
-        <h2 className="bg-gradient-to-r from-indigo-600 to-purple-700 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-          Grupy i zespoły
-        </h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Twórz zespoły, przeglądaj członków i przypisuj użytkowników do grup.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            Działy i organizacje
+          </h1>
+
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            {isInternal(me)
+              ? 'Zarządzaj strukturą wszystkich organizacji i ich działami.'
+              : 'Zarządzaj członkami oraz działami swojej organizacji.'}
+          </p>
+        </div>
+
+        {selectedOrganization && (
+          <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+              <Building2 className="h-5 w-5" />
+            </span>
+
+            <span>
+              <span className="block text-xs font-medium text-slate-500 dark:text-slate-400">
+                Wybrana organizacja
+              </span>
+
+              <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {selectedOrganization.name}
+              </span>
+            </span>
+          </div>
+        )}
+      </header>
+
+      <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button
+          type="button"
+          onClick={() => setActiveTab('groups')}
+          className={[
+            'inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold transition',
+            activeTab === 'groups'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+          ].join(' ')}
+        >
+          <Users className="h-4 w-4" />
+          Działy
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('organizations')}
+          className={[
+            'inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold transition',
+            activeTab === 'organizations'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+          ].join(' ')}
+        >
+          <Building2 className="h-4 w-4" />
+          {organizationTabLabel}
+        </button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        <section className="space-y-6">
-          <form
-            onSubmit={createGroup}
-            className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-          >
-            <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                Nowa grupa
-              </h3>
-            </div>
+      {activeTab === 'organizations' && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {organizations.map((organization) => (
+            <article
+              key={organization.id}
+              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            >
+              <Building2 className="mb-4 h-6 w-6 text-indigo-600" />
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                Nazwa
-              </span>
+              <h2 className="font-semibold text-slate-900 dark:text-slate-100">
+                {organization.name}
+              </h2>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-slate-500">Użytkownicy</p>
+                  <p className="font-semibold">{organization.user_count}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Działy</p>
+                  <p className="font-semibold">{organization.group_count}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'groups' && (
+        <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
+          <aside className="space-y-5">
+            <form
+              onSubmit={createGroup}
+              className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            >
+              <h2 className="font-semibold">Nowy dział</h2>
+
+              {isInternal(me) && (
+                <select
+                  value={selectedOrganizationId}
+                  onChange={(event) =>
+                    setSelectedOrganizationId(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                  required
+                >
+                  <option value="">Wybierz organizację</option>
+
+                  {organizations.map((organization) => (
+                    <option key={organization.id} value={organization.id}>
+                      {organization.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+                placeholder="Nazwa działu"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
                 required
               />
-            </label>
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                Dział opcjonalnie
-              </span>
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 value={department}
-                onChange={(e) => setDepartment(e.target.value)}
+                onChange={(event) => setDepartment(event.target.value)}
+                placeholder="Opis lub specjalizacja"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
               />
-            </label>
 
-            <button
-              type="submit"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:shadow-md"
+              <button
+                type="submit"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700"
+              >
+                <Plus className="h-4 w-4" />
+                Utwórz dział
+              </button>
+            </form>
+
+            <form
+              onSubmit={submitSearch}
+              className="flex gap-2 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
             >
-              <Plus className="h-4 w-4" />
-              Utwórz grupę
-            </button>
-          </form>
+              <input
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
+                placeholder="Szukaj działu"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+              />
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-3 flex items-center gap-2">
-              <Search className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                Szukaj
-              </h3>
-            </div>
+              <button
+                type="submit"
+                title="Szukaj"
+                className="rounded-lg border border-slate-300 p-2 dark:border-slate-700"
+              >
+                <Search className="h-5 w-5" />
+              </button>
+            </form>
+          </aside>
 
-            <input
-              type="search"
-              placeholder="Szukaj grupy..."
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </section>
-        </section>
+          <section className="space-y-3">
+            {loading && (
+              <p className="text-sm text-slate-500">Ładowanie działów...</p>
+            )}
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                Lista grup
-              </h3>
-            </div>
+            {!loading && groups.length === 0 && (
+              <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+                Brak działów do wyświetlenia.
+              </div>
+            )}
 
-            <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">
-              {groups.length} grup
-            </span>
-          </div>
-
-          {groups.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              Brak grup do wyświetlenia.
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {groups.map((g) => (
-                <li
-                  key={g.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-indigo-200 hover:bg-indigo-50/40 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"
-                >
+            {groups.map((group) => (
+              <article
+                key={group.id}
+                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex items-start justify-between gap-4">
                   <button
                     type="button"
-                    className="flex w-full items-start justify-between gap-3 text-left"
-                    onClick={() => openGroup(g)}
+                    onClick={() => openGroup(group)}
+                    className="min-w-0 flex-1 text-left"
                   >
-                    <span>
-                      <span className="block font-semibold text-slate-900 dark:text-slate-100">
-                        {g.name}
-                      </span>
+                    <h3 className="font-semibold">{group.name}</h3>
 
-                      <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">
-                        {g.department || 'Brak działu'}
-                      </span>
-                    </span>
-
-                    {g.member_count != null && (
-                      <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
-                        {g.member_count} os.
-                      </span>
-                    )}
+                    <p className="mt-1 text-sm text-slate-500">
+                      {group.organization_name}
+                      {group.department ? ` · ${group.department}` : ''}
+                    </p>
                   </button>
 
-                  {expanded === g.id && (
-                    <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
-                      <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                        Członkowie
-                      </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-500">
+                      {group.member_count} os.
+                    </span>
 
-                      {members.length === 0 ? (
-                        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-                          Ta grupa nie ma jeszcze członków.
-                        </p>
-                      ) : (
-                        <ul className="mb-4 space-y-2">
-                          {members.map((u) => (
-                            <li
-                              key={u.id}
-                              className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200"
-                            >
-                              {u.username} <span className="text-slate-400">({u.email})</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                    <button
+                      type="button"
+                      title="Usuń dział"
+                      onClick={() => deleteGroup(group)}
+                      className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
 
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          type="search"
-                          placeholder="Szukaj użytkownika..."
-                          className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                          value={userSearch}
-                          onChange={(e) => setUserSearch(e.target.value)}
-                        />
+                {expandedGroupId === group.id && (
+                  <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+                    <h4 className="mb-3 text-sm font-semibold">Członkowie</h4>
+
+                    <div className="space-y-2">
+                      {groupMembers.map((member) => (
+                        <div
+                          key={member.id}
+                          className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950"
+                        >
+                          <span className="text-sm">
+                            {member.username}
+                            <span className="ml-2 text-slate-400">
+                              {member.email}
+                            </span>
+                          </span>
+
+                          <button
+                            type="button"
+                            title="Usuń z działu"
+                            onClick={() => removeMember(group.id, member.id)}
+                            className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <input
+                        value={userSearch}
+                        onChange={(event) => setUserSearch(event.target.value)}
+                        placeholder="Szukaj użytkownika"
+                        className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => searchUsers(group)}
+                        className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700"
+                      >
+                        Szukaj
+                      </button>
+                    </div>
+
+                    {userHits.map((user) => (
+                      <div
+                        key={user.id}
+                        className="mt-2 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800"
+                      >
+                        <span className="text-sm">
+                          {user.username} · {user.email}
+                        </span>
 
                         <button
                           type="button"
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-                          onClick={searchUsers}
+                          title="Dodaj do działu"
+                          onClick={() => addMember(group.id, user.id)}
+                          className="rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-700"
                         >
-                          <Search className="h-4 w-4" />
-                          Szukaj
+                          <UserPlus className="h-4 w-4" />
                         </button>
                       </div>
-
-                      {userHits.length > 0 && (
-                        <ul className="mt-3 space-y-2">
-                          {userHits.map((u) => (
-                            <li
-                              key={u.id}
-                              className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm dark:bg-slate-900"
-                            >
-                              <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
-                                {u.username} - {u.email}
-                              </span>
-
-                              <button
-                                type="button"
-                                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
-                                onClick={() => addMember(g.id, u.id)}
-                              >
-                                <UserPlus className="h-3.5 w-3.5" />
-                                Dodaj
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
